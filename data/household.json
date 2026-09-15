@@ -1,0 +1,26 @@
+{
+  "id": "hh-northbridge",
+  "name": "Northbridge",
+  "address_pseudonym": "Northbridge Residence, Cascadia",
+  "timezone": "America/Los_Angeles",
+  "members": [
+    {
+      "id": "member-avery",
+      "name": "Avery Quinn",
+      "role": "co-admin",
+      "preferred_channel": "dashboard"
+    },
+    {
+      "id": "member-morgan",
+      "name": "Morgan Quinn",
+      "role": "co-admin",
+      "preferred_channel": "dashboard"
+    }
+  ],
+  "preferences": {
+    "mode": "escalate_only",
+    "quiet_hours": ["22:00", "07:00"],
+    "brief_tone": "plain_spoken",
+    "research_anomalies": true
+  }
+}

@@ -1,0 +1,18 @@
+[
+  {
+    "id": "fund-checking",
+    "name": "Northbridge Checking",
+    "institution": "Cascadia Credit Union",
+    "available_balance": 6120.44,
+    "reserve_floor": 2500.0,
+    "currency": "USD"
+  },
+  {
+    "id": "fund-hsa",
+    "name": "Northbridge HSA",
+    "institution": "Harbor Benefits",
+    "available_balance": 890.12,
+    "reserve_floor": 200.0,
+    "currency": "USD"
+  }
+]

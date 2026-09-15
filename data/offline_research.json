@@ -1,0 +1,51 @@
+{
+  "StreamFlix Premium price increase 2026": {
+    "query": "StreamFlix Premium price increase 2026",
+    "source": "offline_fixture",
+    "results": [
+      {
+        "title": "StreamFlix announces Premium tier repricing for Fall 2026",
+        "url": "https://example.com/streamflix-premium-2026",
+        "snippet": "StreamFlix will raise Premium from $15.99 to $29.99 in September 2026 for new and renewing subscribers. Existing annual plans keep grandfathered pricing until renewal."
+      },
+      {
+        "title": "Cord-cutter forums react to StreamFlix Premium hike",
+        "url": "https://example.com/forums/streamflix-hike",
+        "snippet": "Users report autopay drafts at $29.99 without clear in-app notice. Recommended action: confirm plan tier and cancel/downgrade before next draft."
+      }
+    ]
+  },
+  "Pacific Gas & Electric duplicate bill September 2026": {
+    "query": "Pacific Gas & Electric duplicate bill September 2026",
+    "source": "offline_fixture",
+    "results": [
+      {
+        "title": "PG&E billing FAQ — duplicate statements",
+        "url": "https://example.com/pge/duplicate-bills",
+        "snippet": "Customers sometimes receive a paper notice and an e-bill for the same period. Pay once; contact support if two drafts appear on the same account."
+      }
+    ]
+  },
+  "Bayview Family Dental crown insurance remittance": {
+    "query": "Bayview Family Dental crown insurance remittance",
+    "source": "offline_fixture",
+    "results": [
+      {
+        "title": "Dental crown typical patient responsibility after PPO",
+        "url": "https://example.com/dental/crown-costs",
+        "snippet": "After PPO remittance, patient responsibility for a single crown commonly lands between $200–$500. Confirm EOB before paying the full office estimate."
+      }
+    ]
+  },
+  "Cascadia vehicle registration renewal 2026": {
+    "query": "Cascadia vehicle registration renewal 2026",
+    "source": "offline_fixture",
+    "results": [
+      {
+        "title": "Cascadia DMV online renewal checklist",
+        "url": "https://example.com/dmv/renewal",
+        "snippet": "Online renewal available if no holds. Keep proof of insurance and smog certificate if required for the vehicle class."
+      }
+    ]
+  }
+}

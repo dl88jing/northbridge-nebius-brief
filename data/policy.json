@@ -1,0 +1,47 @@
+{
+  "version": "2026.09-brief",
+  "mode": "escalate_only",
+  "rules": [
+    {
+      "id": "amount_out_of_band",
+      "when": "amount outside expected_amount_range",
+      "decision": "HUMAN_REQUIRED",
+      "reason": "Unexpected amount — confirm before funding",
+      "research": true
+    },
+    {
+      "id": "duplicate_charge",
+      "when": "same payee + amount + due_date as another open bill",
+      "decision": "HUMAN_REQUIRED",
+      "reason": "Possible duplicate charge",
+      "research": true
+    },
+    {
+      "id": "category_sensitive",
+      "when": "category in medical|tax|legal|unknown",
+      "decision": "HUMAN_REQUIRED",
+      "reason": "Sensitive category always escalates",
+      "research": true
+    },
+    {
+      "id": "insufficient_funding",
+      "when": "available_balance - reserve_floor < amount",
+      "decision": "HUMAN_REQUIRED",
+      "reason": "Funding shortfall vs reserve floor",
+      "research": false
+    },
+    {
+      "id": "routine_in_band",
+      "when": "no anomalies and category auto-eligible",
+      "decision": "AUTO",
+      "reason": "Routine bill within expected band with adequate funding",
+      "research": false
+    }
+  ],
+  "auto_eligible_categories": ["utilities", "insurance", "rent", "internet", "subscription"],
+  "nemotron": {
+    "fast_model": "nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B",
+    "reason_model": "nvidia/nemotron-3-super-120b-a12b",
+    "base_url": "https://api.tokenfactory.nebius.com/v1/"
+  }
+}

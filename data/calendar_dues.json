@@ -1,0 +1,58 @@
+[
+  {
+    "id": "due-streamflix",
+    "kind": "bill",
+    "title": "StreamFlix Premium",
+    "ref_id": "bill-streamflix-2026-09",
+    "due_date": "2026-09-16",
+    "priority": "high"
+  },
+  {
+    "id": "due-pge",
+    "kind": "bill",
+    "title": "PG&E electric",
+    "ref_id": "bill-pge-2026-09",
+    "due_date": "2026-09-18",
+    "priority": "normal"
+  },
+  {
+    "id": "due-pge-dup",
+    "kind": "bill",
+    "title": "PG&E electric (second notice)",
+    "ref_id": "bill-pge-dup-2026-09",
+    "due_date": "2026-09-18",
+    "priority": "high"
+  },
+  {
+    "id": "due-fiber",
+    "kind": "bill",
+    "title": "Cascadia Fiber",
+    "ref_id": "bill-fiber-2026-09",
+    "due_date": "2026-09-20",
+    "priority": "normal"
+  },
+  {
+    "id": "due-dental",
+    "kind": "bill",
+    "title": "Bayview Family Dental",
+    "ref_id": "bill-dental-2026-09",
+    "due_date": "2026-09-22",
+    "priority": "high"
+  },
+  {
+    "id": "due-rent",
+    "kind": "bill",
+    "title": "Northbridge rent",
+    "ref_id": "bill-rent-2026-09",
+    "due_date": "2026-10-01",
+    "priority": "normal"
+  },
+  {
+    "id": "due-dmv",
+    "kind": "admin",
+    "title": "Vehicle registration renewal reminder",
+    "ref_id": "admin-dmv-2026",
+    "due_date": "2026-09-28",
+    "priority": "normal"
+  }
+]

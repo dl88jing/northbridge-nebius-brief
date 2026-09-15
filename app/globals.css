@@ -1,0 +1,148 @@
+@import "tailwindcss";
+
+:root {
+  --ink: #1c241c;
+  --muted: #5c6b5c;
+  --paper: #f4efe4;
+  --card: #fbf7ef;
+  --line: #d9d0bf;
+  --sage: #3f6b4f;
+  --sage-deep: #2c4d38;
+  --copper: #b56a3a;
+  --warn: #9a3b2f;
+  --ok: #2f6b45;
+  --sky: #3d5c6e;
+}
+
+@theme inline {
+  --color-background: var(--paper);
+  --color-foreground: var(--ink);
+  --font-sans: var(--font-source);
+  --font-display: var(--font-fraunces);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  min-height: 100%;
+  background:
+    radial-gradient(1200px 600px at 10% -10%, #e7efe4 0%, transparent 55%),
+    radial-gradient(900px 500px at 100% 0%, #f0e4d4 0%, transparent 50%),
+    var(--paper);
+  color: var(--ink);
+  font-family: var(--font-source), ui-sans-serif, system-ui, sans-serif;
+}
+
+body::before {
+  content: "";
+  pointer-events: none;
+  position: fixed;
+  inset: 0;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.035'/%3E%3C/svg%3E");
+  opacity: 0.5;
+  z-index: 0;
+}
+
+a {
+  color: var(--sage-deep);
+}
+
+.display {
+  font-family: var(--font-fraunces), Georgia, serif;
+}
+
+.card {
+  background: color-mix(in oklab, var(--card) 92%, white);
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  box-shadow: 0 10px 30px rgba(40, 50, 40, 0.05);
+}
+
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  border-radius: 999px;
+  padding: 0.2rem 0.65rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  border: 1px solid var(--line);
+  background: #fffaf2;
+}
+
+.pill-ok {
+  color: var(--ok);
+  border-color: color-mix(in oklab, var(--ok) 35%, var(--line));
+  background: color-mix(in oklab, var(--ok) 10%, white);
+}
+
+.pill-warn {
+  color: var(--warn);
+  border-color: color-mix(in oklab, var(--warn) 35%, var(--line));
+  background: color-mix(in oklab, var(--warn) 10%, white);
+}
+
+.pill-info {
+  color: var(--sky);
+  border-color: color-mix(in oklab, var(--sky) 35%, var(--line));
+  background: color-mix(in oklab, var(--sky) 10%, white);
+}
+
+.btn {
+  appearance: none;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  padding: 0.7rem 1.05rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: transform 0.12s ease, box-shadow 0.12s ease, background 0.12s ease;
+}
+
+.btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.btn-primary {
+  background: linear-gradient(180deg, var(--sage) 0%, var(--sage-deep) 100%);
+  color: #f7faf6;
+  box-shadow: 0 8px 18px rgba(44, 77, 56, 0.25);
+}
+
+.btn-primary:hover:not(:disabled) {
+  transform: translateY(-1px);
+}
+
+.btn-ghost {
+  background: #fffaf2;
+  border-color: var(--line);
+  color: var(--ink);
+}
+
+.timeline-item {
+  position: relative;
+  padding-left: 1.15rem;
+}
+
+.timeline-item::before {
+  content: "";
+  position: absolute;
+  left: 0.15rem;
+  top: 0.45rem;
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 999px;
+  background: var(--sage);
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--sage) 18%, transparent);
+}
+
+.mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.78rem;
+}
