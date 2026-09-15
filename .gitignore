@@ -46,3 +46,4 @@ data/runtime/*
 # python
 .venv/
 __pycache__/
+.env*

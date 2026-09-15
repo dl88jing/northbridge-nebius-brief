@@ -2,25 +2,51 @@ import { mkdirSync, readFileSync, writeFileSync, existsSync } from "fs";
 import path from "path";
 import type { InvestigateResponse, RuntimeState } from "./types";
 
-const DIR = path.join(process.cwd(), "data", "runtime");
-const FILE = path.join(DIR, "state.json");
+/** Prefer writable /tmp on Vercel; fall back to data/runtime locally. */
+function statePaths(): string[] {
+  const tmp = path.join("/tmp", "northbridge-brief-state.json");
+  const localDir = path.join(process.cwd(), "data", "runtime");
+  const local = path.join(localDir, "state.json");
+  // On Vercel/serverless, cwd is read-only — use tmp first.
+  if (process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME) {
+    return [tmp, local];
+  }
+  return [local, tmp];
+}
+
+let memory: RuntimeState | null = null;
 
 function empty(): RuntimeState {
   return { handled: [], needs_decision: [], briefs: {} };
 }
 
 export function loadRuntime(): RuntimeState {
-  try {
-    if (!existsSync(FILE)) return empty();
-    return JSON.parse(readFileSync(FILE, "utf8")) as RuntimeState;
-  } catch {
-    return empty();
+  if (memory) return memory;
+  for (const file of statePaths()) {
+    try {
+      if (existsSync(file)) {
+        memory = JSON.parse(readFileSync(file, "utf8")) as RuntimeState;
+        return memory;
+      }
+    } catch {
+      /* try next */
+    }
   }
+  memory = empty();
+  return memory;
 }
 
 export function saveRuntime(state: RuntimeState) {
-  mkdirSync(DIR, { recursive: true });
-  writeFileSync(FILE, JSON.stringify(state, null, 2));
+  memory = state;
+  for (const file of statePaths()) {
+    try {
+      mkdirSync(path.dirname(file), { recursive: true });
+      writeFileSync(file, JSON.stringify(state, null, 2));
+      return;
+    } catch {
+      /* try next path / memory-only */
+    }
+  }
 }
 
 export function resetRuntime() {

@@ -11,7 +11,7 @@ Powered by **NVIDIA Nemotron** on **Nebius Token Factory**, with a quiet **escal
 
 ## Live demo
 
-**Dashboard:** *(deployed after push — see Success report / Vercel)*
+**Dashboard:** [https://northbridge-nebius-brief.vercel.app](https://northbridge-nebius-brief.vercel.app)
 
 Judge path works fully **offline** with fixture research. Add `NEBIUS_API_KEY` for live Token Factory calls; add `TAVILY_API_KEY` for live web research.
 
