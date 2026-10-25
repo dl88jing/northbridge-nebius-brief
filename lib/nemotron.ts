@@ -62,7 +62,7 @@ function sourcesBlock(research?: ResearchBundle): string {
     .join("\n\n");
 }
 
-export async function planInvestigation(goal: string, model?: string, timeout_ms = 15_000): Promise<{ plan: string; meta: LlmCallMeta }> {
+export async function planInvestigation(goal: string, model?: string, timeout_ms = 15_000, billContext = ""): Promise<{ plan: string; meta: LlmCallMeta }> {
   const m = model || getModels().fast;
   if (!hasNebiusKey()) {
     return {
@@ -74,8 +74,12 @@ export async function planInvestigation(goal: string, model?: string, timeout_ms
     const r = await chat(
       m,
       [
-        { role: "system", content: "You are the Northbridge Brief planner. Output a short numbered investigation plan (max 5 steps, one line each). No preamble." },
-        { role: "user", content: goal },
+        {
+          role: "system",
+          content:
+            "You plan the nightly bill review for a two-person household (Avery and Morgan). Available tools: policy_gate (deterministic rules: duplicates, amount out of expected band, medical/tax/legal sensitivity, funding), web_research (Tavily search + extract), write_brief (cited decision brief), ultra_review (second opinion on high-stakes briefs), mark_auto_handled. Output a numbered plan of at most 5 short steps, one line each, naming the specific bills that look worth a closer look and why. Household bills only. No preamble.",
+        },
+        { role: "user", content: `GOAL: ${goal}\n\nOPEN BILLS:\n${billContext || "(not loaded)"}` },
       ],
       { max_tokens: 400, timeout_ms }
     );
