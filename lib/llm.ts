@@ -3,7 +3,7 @@ import { getNebiusKey, getModels } from "./config";
 import { costUsd } from "./pricing";
 import type { LlmUsage } from "./types";
 
-export type ChatMessage = { role: "system" | "user"; content: string };
+export type ChatMessage = { role: "system" | "user" | "assistant"; content: string };
 
 /** Minimal surface we need from an OpenAI-compatible client (injectable for tests). */
 export type ChatClient = {
