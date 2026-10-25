@@ -78,7 +78,7 @@ async function runInvestigationInner(opts?: RunOpts): Promise<InvestigateRespons
   const planned = await planInvestigation(goal, pick(models.fast), left(12_000), billContext);
   if (planned.meta.mode === "fallback") fallbacks.push(`Plan: Nemotron Nano ${why(planned.meta.error)}, so a template plan was used`);
   if (planned.meta.usage) usages.push(planned.meta.usage);
-  timeline.push(step("plan", "Investigation plan", planned.plan, undefined, planned.meta));
+  timeline.push(step("plan", "Investigation plan (the policy gate below makes the decisions)", planned.plan, undefined, planned.meta));
   timeline.push(step("tool", "list_open_bills", `Loaded ${bills.length} open bills for ${household.name}`, undefined, { model: "deterministic tool" }));
 
   // Bills are independent, so they are investigated in parallel; order is restored afterwards.

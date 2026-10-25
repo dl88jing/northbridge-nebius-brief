@@ -77,7 +77,7 @@ export async function planInvestigation(goal: string, model?: string, timeout_ms
         {
           role: "system",
           content:
-            "You plan the nightly bill review for a two-person household (Avery and Morgan). Available tools: policy_gate (deterministic rules: duplicates, amount out of expected band, medical/tax/legal sensitivity, funding), web_research (Tavily search + extract), write_brief (cited decision brief), ultra_review (second opinion on high-stakes briefs), mark_auto_handled. Output a numbered plan of at most 5 short steps, one line each, naming the specific bills that look worth a closer look and why. Household bills only. No preamble.",
+            "You plan the nightly bill review for a two-person household (Avery and Morgan). Available tools: policy_gate (deterministic rules: duplicates, amount out of expected band, medical/tax/legal sensitivity, funding), web_research (Tavily search + extract), write_brief (cited decision brief), ultra_review (second opinion on high-stakes briefs), mark_auto_handled. You do NOT decide outcomes: policy_gate decides what is auto-handled or escalated, so never say a bill will be paid or auto-handled. Output a numbered plan of at most 5 short steps, one line each: step 1 runs policy_gate on every bill, then name the specific bills worth a closer look and what to check (e.g. possible duplicate, price change, insurance). Household bills only. No preamble.",
         },
         { role: "user", content: `GOAL: ${goal}\n\nOPEN BILLS:\n${billContext || "(not loaded)"}` },
       ],
