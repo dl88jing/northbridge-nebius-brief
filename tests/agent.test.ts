@@ -3,10 +3,13 @@ import assert from "node:assert/strict";
 import { clearKeys } from "./helpers";
 import { runInvestigation } from "../lib/agent";
 import { setChatClient, type ChatClient } from "../lib/llm";
-import { setFetcher } from "../lib/tavily";
+import { clearResearchCache, setFetcher } from "../lib/tavily";
 import { getStatus } from "../lib/status";
 
-beforeEach(() => clearKeys());
+beforeEach(() => {
+  clearKeys();
+  clearResearchCache();
+});
 afterEach(() => {
   setChatClient(null);
   setFetcher(null);
@@ -82,7 +85,9 @@ test("live path: Nano plans, Super writes cited briefs, Ultra reviews the high-s
   assert.equal(dental.brief!.citations?.[0].url, "https://a.example.org/x");
   assert.equal(r.receipt?.measured, true);
   assert.ok(r.receipt!.routed_cost_usd < r.receipt!.all_ultra_repriced_usd);
-  assert.equal(r.receipt!.tavily_credits, 3 * r.results.filter((x) => x.research).length);
+  // Bills asking the same question (both PG&E statements) share one search, so credits = 3 x unique queries.
+  const unique = new Set(r.results.filter((x) => x.research).map((x) => x.research!.query));
+  assert.equal(r.receipt!.tavily_credits, 3 * unique.size);
   const research = r.timeline.find((s) => s.kind === "research")!;
   assert.match(research.title, /Tavily search \+ extract/);
 });
@@ -98,8 +103,6 @@ test("status never leaks key values", () => {
 test("provider failure never surfaces an error: labeled fallbacks, run_mode=degraded", async () => {
   process.env.NEBIUS_API_KEY = "test-not-a-real-key";
   process.env.TAVILY_API_KEY = "test-not-a-real-key";
-  const { clearResearchCache } = await import("../lib/tavily");
-  clearResearchCache();
   setChatClient({ chat: { completions: { create: async () => { throw new Error("402 insufficient balance"); } } } } as ChatClient);
   setFetcher((async () => new Response("{}", { status: 432 })) as typeof fetch);
   const r = await runInvestigation({ persist: false, budget_ms: 20_000 });

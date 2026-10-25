@@ -86,6 +86,7 @@ async function post<T>(path: string, body: unknown, timeoutMs = 12_000): Promise
 /** Same question within 6 h on the same instance → reuse the live result (0 new credits). Keeps free-plan credit use modest. */
 const CACHE_MS = 6 * 60 * 60 * 1000;
 const cache = new Map<string, { at: number; bundle: ResearchBundle }>();
+const inflight = new Map<string, Promise<ResearchBundle>>();
 export function clearResearchCache() {
   cache.clear();
 }
@@ -109,9 +110,18 @@ export async function researchWeb(plan: ResearchPlan): Promise<ResearchBundle> {
   if (!hasTavilyKey()) return offlineResearch(plan);
   const hit = cache.get(plan.query);
   if (hit && Date.now() - hit.at < CACHE_MS) return { ...hit.bundle, credits: 0, cached: true };
-  const out = await researchLive(plan);
-  if (out.source === "tavily" && !out.error) cache.set(plan.query, { at: Date.now(), bundle: out });
-  return out;
+  // Two bills with the same question in one run (e.g. both PG&E statements) share one in-flight search.
+  const pending = inflight.get(plan.query);
+  if (pending) return { ...(await pending), credits: 0, cached: true };
+  const p = researchLive(plan);
+  inflight.set(plan.query, p);
+  try {
+    const out = await p;
+    if (out.source === "tavily" && !out.error) cache.set(plan.query, { at: Date.now(), bundle: out });
+    return out;
+  } finally {
+    inflight.delete(plan.query);
+  }
 }
 
 async function researchLive(plan: ResearchPlan): Promise<ResearchBundle> {
