@@ -75,7 +75,8 @@ export default function Home() {
       setStatus(await res.json());
       setError(null);
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "Failed to load status");
+      void e;
+      setError("Status is still loading. You can press Run the demo anyway.");
     }
   }, []);
 
@@ -158,6 +159,9 @@ export default function Home() {
 
   const mode = status?.mode || "offline";
   // The banner reflects what the last run actually did; before any run, it reflects which providers are configured.
+  // Pills: configured AND (no run yet, or the last run actually reached the provider).
+  const tfLive = !!status?.token_factory && (!inv || !!inv.receipt?.measured);
+  const tvLive = !!status?.tavily && (!inv || (inv.timeline || []).some((t) => /^Tavily search/.test(t.title)));
   const bannerMode = inv?.run_mode || (mode === "live" ? "live" : mode === "partial" ? "degraded" : "offline");
   // Prefer data from the run response itself: on serverless, /api/status may hit a different instance.
   const briefs = useMemo(() => {
@@ -181,7 +185,7 @@ export default function Home() {
 
   return (
     <main className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
-      {(status || inv) && <ModeBanner mode={bannerMode} tf={!!status?.token_factory} tv={!!status?.tavily} fallbacks={inv?.fallbacks || []} />}
+      {(status || inv) && <ModeBanner mode={bannerMode} tf={!!status?.token_factory} tv={!!status?.tavily} fallbacks={inv?.fallbacks || []} anyLive={!!inv?.receipt?.measured} />}
 
       <header className="mb-6 mt-4 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         <div>
@@ -193,8 +197,8 @@ export default function Home() {
           </p>
         </div>
         <div className="flex flex-wrap gap-2" aria-label="Runtime status">
-          <span className={`pill ${status?.token_factory ? "pill-ok" : "pill-warn"}`}>{status?.token_factory ? "Token Factory: live" : "Token Factory: off"}</span>
-          <span className={`pill ${status?.tavily ? "pill-ok" : "pill-warn"}`}>{status?.tavily ? "Tavily: live" : "Tavily: off (fixtures)"}</span>
+          <span className={`pill ${tfLive ? "pill-ok" : "pill-warn"}`}>{tfLive ? "Token Factory: live" : status?.token_factory ? "Token Factory: not answering" : "Token Factory: off"}</span>
+          <span className={`pill ${tvLive ? "pill-ok" : "pill-warn"}`}>{tvLive ? "Tavily: live" : status?.tavily ? "Tavily: not answering" : "Tavily: off (fixtures)"}</span>
         </div>
       </header>
 
@@ -364,7 +368,7 @@ export default function Home() {
   );
 }
 
-function ModeBanner({ mode, tf, tv, fallbacks }: { mode: string; tf: boolean; tv: boolean; fallbacks: string[] }) {
+function ModeBanner({ mode, tf, tv, fallbacks, anyLive }: { mode: string; tf: boolean; tv: boolean; fallbacks: string[]; anyLive?: boolean }) {
   if (mode === "live") {
     return (
       <div role="status" className="rounded-xl border border-[var(--ok)] bg-[#e9f3ec] px-4 py-2 text-sm text-[var(--ok)]">
@@ -375,10 +379,11 @@ function ModeBanner({ mode, tf, tv, fallbacks }: { mode: string; tf: boolean; tv
   if (mode === "degraded") {
     return (
       <div role="status" className="rounded-xl border border-[var(--line)] bg-white px-4 py-2 text-sm text-[var(--muted)]">
-        <strong className="text-[var(--ink)]">LIVE, with a labeled fallback.</strong> Most steps ran on Token Factory and Tavily; the steps below used a labeled template or fixture instead, and they are marked in the trace.
+        <strong className="text-[var(--ink)]">{anyLive ? "LIVE, with a labeled fallback." : "Live providers unavailable right now: showing the labeled fallback."}</strong>{" "}
+        Steps that could not reach Token Factory or Tavily used a labeled template or fixture instead; each one is marked in the trace.
         {fallbacks.length > 0 && (
           <ul className="mt-1 list-disc pl-5">
-            {fallbacks.slice(0, 4).map((f) => (
+            {[...new Set(fallbacks)].slice(0, 4).map((f) => (
               <li key={f}>{f}</li>
             ))}
           </ul>

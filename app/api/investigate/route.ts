@@ -23,7 +23,7 @@ export async function POST(req: NextRequest) {
 async function offlineFallback(e: unknown) {
   const message = e instanceof Error ? e.message : "investigate failed";
   const result = await runInvestigation({ reset: true, offline: true });
-  return { ...result, run_mode: "degraded" as const, fallbacks: [`Live run failed (${message}); showing the labeled offline run`, ...result.fallbacks] };
+  return { ...result, run_mode: "degraded" as const, fallbacks: ["The live run hit an unexpected problem, so this is the labeled offline run", ...result.fallbacks], error_detail: message.slice(0, 200) };
 }
 
 export async function GET() {

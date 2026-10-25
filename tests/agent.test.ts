@@ -115,7 +115,7 @@ test("provider failure never surfaces an error: labeled fallbacks, run_mode=degr
     assert.ok(res.brief!.citations && res.brief!.citations.length > 0);
   }
   assert.ok(r.timeline.some((s) => /FALLBACK/.test(s.title)));
-  assert.ok(r.fallbacks.some((f) => /credit limit/.test(f)), "Tavily credit exhaustion is named");
+  assert.ok(r.fallbacks.some((f) => /out of credits/.test(f)), "Tavily credit exhaustion is named");
 });
 
 test("offline flag forces the labeled offline path even with keys set (no network)", async () => {
