@@ -1,4 +1,14 @@
+import { AsyncLocalStorage } from "node:async_hooks";
 import { loadPolicy } from "./fixtures";
+
+/** Per-request override: run the labeled offline path even when keys exist (client fallback). */
+const offlineScope = new AsyncLocalStorage<{ offline: boolean }>();
+export function withOffline<T>(fn: () => Promise<T>): Promise<T> {
+  return offlineScope.run({ offline: true }, fn);
+}
+export function forcedOffline(): boolean {
+  return offlineScope.getStore()?.offline === true;
+}
 
 /** Key presence checks never return or log the key value. */
 export function getNebiusKey(): string | undefined {
@@ -11,7 +21,7 @@ export function getNebiusKey(): string | undefined {
 }
 
 export function hasNebiusKey(): boolean {
-  return Boolean(getNebiusKey());
+  return !forcedOffline() && Boolean(getNebiusKey());
 }
 
 export function getTavilyKey(): string | undefined {
@@ -19,7 +29,7 @@ export function getTavilyKey(): string | undefined {
 }
 
 export function hasTavilyKey(): boolean {
-  return Boolean(getTavilyKey());
+  return !forcedOffline() && Boolean(getTavilyKey());
 }
 
 export function getModels() {

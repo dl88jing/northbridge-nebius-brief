@@ -52,6 +52,11 @@ export type ResearchBundle = {
   extract_ms?: number;
   extracted_count?: number;
   error?: string;
+  extract_error?: string;
+  /** Keys are set but Tavily failed (timeout, rate limit, credits) → labeled offline fixtures were used */
+  fallback?: boolean;
+  /** Reused a live Tavily result from this instance's 6-hour cache (0 new credits) */
+  cached?: boolean;
 };
 
 export type LlmUsage = {
@@ -121,7 +126,8 @@ export type DecisionBrief = {
   research_summary?: string;
   speakable: string;
   model_used: string;
-  mode: "live" | "offline";
+  /** fallback = keys are set but the live call failed or timed out; a labeled template was used */
+  mode: "live" | "offline" | "fallback";
   /** Numbered sources the brief cites as [1], [2] ... */
   citations?: { n: number; title: string; url: string }[];
   ultra_review?: UltraReview;
@@ -130,6 +136,12 @@ export type DecisionBrief = {
 export type InvestigateResponse = {
   ok: true;
   mode: "live" | "partial" | "offline";
+  /** What actually happened on this run: live = every call live; degraded = keys set but some step used a labeled fallback */
+  run_mode: "live" | "degraded" | "offline";
+  /** Human-readable list of steps that fell back (empty when fully live) */
+  fallbacks: string[];
+  /** Served from the short-lived run cache instead of new API calls */
+  cached?: boolean;
   models: { fast: string; reason: string; ultra: string };
   receipt: CostReceipt;
   started_at: string;

@@ -2,7 +2,7 @@ import { loadBills, loadHousehold, getBill } from "./fixtures";
 import { evaluateBill } from "./policy";
 import { composeDecisionBrief, needsUltraReview, planInvestigation, ultraReview } from "./nemotron";
 import { researchPlanForBill, researchWeb } from "./tavily";
-import { getModels, hasNebiusKey, hasTavilyKey, runtimeMode } from "./config";
+import { getModels, hasNebiusKey, hasTavilyKey, runtimeMode, withOffline } from "./config";
 import { persistInvestigation, resetRuntime } from "./runtime";
 import { buildReceipt } from "./receipt";
 import type { AgentStep, InvestigateResponse, InvestigationResult, LlmUsage } from "./types";
@@ -28,14 +28,28 @@ function step(kind: AgentStep["kind"], title: string, detail?: string, data?: un
  * profile "routed"    = Nano plans, Super writes briefs, Ultra reviews only high-stakes escalations (default)
  * profile "all-ultra" = every LLM step on Ultra (measured baseline for the cost comparison)
  */
-export async function runInvestigation(opts?: {
+type RunOpts = {
   billIds?: string[];
   reset?: boolean;
   goal?: string;
   profile?: "routed" | "all-ultra";
   persist?: boolean;
-}): Promise<InvestigateResponse> {
+  /** Run the labeled offline path even when keys are set (client-side fallback). */
+  offline?: boolean;
+  /** Wall-clock budget for the whole run; every live call is bounded by what is left. */
+  budget_ms?: number;
+};
+
+export async function runInvestigation(opts?: RunOpts): Promise<InvestigateResponse> {
+  if (opts?.offline) return withOffline(() => runInvestigationInner(opts));
+  return runInvestigationInner(opts);
+}
+
+async function runInvestigationInner(opts?: RunOpts): Promise<InvestigateResponse> {
   const t0 = Date.now();
+  const deadline = t0 + (opts?.budget_ms ?? 48_000);
+  const left = (cap: number) => Math.max(0, Math.min(cap, deadline - Date.now() - 1500));
+  const fallbacks: string[] = [];
   const started_at = new Date().toISOString();
   if (opts?.reset !== false && opts?.persist !== false) resetRuntime();
   const profile = opts?.profile || "routed";
@@ -48,69 +62,98 @@ export async function runInvestigation(opts?: {
   const results: InvestigationResult[] = [];
   const goal = opts?.goal || "Investigate Northbridge household admin anomalies; auto-handle routine bills; escalate with researched briefs.";
 
-  const planned = await planInvestigation(goal, pick(models.fast));
+  const planned = await planInvestigation(goal, pick(models.fast), left(12_000));
+  if (planned.meta.mode === "fallback") fallbacks.push("Plan (Nano) used a template");
   if (planned.meta.usage) usages.push(planned.meta.usage);
   timeline.push(step("plan", "Investigation plan", planned.plan, undefined, planned.meta));
 
   const bills = loadBills().filter((b) => (opts?.billIds ? opts.billIds.includes(b.id) : b.status === "due"));
   timeline.push(step("tool", "list_open_bills", `Loaded ${bills.length} open bills for ${household.name}`, undefined, { model: "deterministic tool" }));
 
-  for (const bill of bills) {
-    const localSteps: AgentStep[] = [];
-    const verdict = evaluateBill(bill);
-    localSteps.push(step("policy", `Policy gate: ${bill.payee} → ${verdict.decision}`, verdict.reasons.join("; "), verdict, { model: "deterministic rules (no LLM)" }));
+  // Bills are independent, so they are investigated in parallel; order is restored afterwards.
+  const perBill = await Promise.all(
+    bills.map(async (bill) => {
+      const localSteps: AgentStep[] = [];
+      const u: LlmUsage[] = [];
+      let c = 0;
+      const verdict = evaluateBill(bill);
+      localSteps.push(step("policy", `Policy gate: ${bill.payee} → ${verdict.decision}`, verdict.reasons.join("; "), verdict, { model: "deterministic rules (no LLM)" }));
 
-    if (verdict.decision === "AUTO") {
-      localSteps.push(step("action", "mark_auto_handled", `Quietly prepared ${bill.payee}. No human ping, no model tokens spent.`));
-      results.push({ bill_id: bill.id, payee: bill.payee, decision: "AUTO", reasons: verdict.reasons, funding_ok: verdict.funding_ok, steps: localSteps, action: "auto_handled" });
-      timeline.push(...localSteps);
-      continue;
-    }
+      if (verdict.decision === "AUTO") {
+        localSteps.push(step("action", "mark_auto_handled", `Quietly prepared ${bill.payee}. No human ping, no model tokens spent.`));
+        const r: InvestigationResult = { bill_id: bill.id, payee: bill.payee, decision: "AUTO", reasons: verdict.reasons, funding_ok: verdict.funding_ok, steps: localSteps, action: "auto_handled" };
+        return { r, u, c };
+      }
 
-    let research = undefined;
-    if (verdict.needs_research) {
-      const plan = researchPlanForBill(bill, verdict.rule_ids);
-      research = await researchWeb(plan);
-      credits += research.credits ?? 0;
-      const live = research.source === "tavily";
-      localSteps.push(
-        step(
-          "research",
-          live ? `Tavily search + extract (${research.results.length} sources, ${research.extracted_count ?? 0} extracted)` : "Research: OFFLINE fixture (no Tavily call)",
-          `Q: ${plan.query}${research.error ? `\n(${research.error})` : ""}`,
-          research,
-          { model: live ? `Tavily · ${research.credits ?? 0} credits` : "offline fixture" },
-          (research.search_ms ?? 0) + (research.extract_ms ?? 0) || undefined
-        )
-      );
-    }
+      let research = undefined;
+      if (verdict.needs_research) {
+        const plan = researchPlanForBill(bill, verdict.rule_ids);
+        research = await researchWeb(plan);
+        c += research.credits ?? 0;
+        const live = research.source === "tavily";
+        if (research.fallback) fallbacks.push(`${bill.payee}: Tavily unavailable (${research.error}); labeled offline sources used`);
+        const title = live
+          ? `Tavily search + extract (${research.results.length} sources, ${research.extracted_count ?? 0} extracted${research.cached ? ", cached" : ""})`
+          : research.fallback
+            ? "Research: FALLBACK offline fixture (Tavily unavailable)"
+            : "Research: OFFLINE fixture (no Tavily call)";
+        localSteps.push(
+          step(
+            "research",
+            title,
+            `Q: ${plan.query}${research.error ? `\n(${research.error})` : ""}${research.extract_error ? `\n(extract skipped: ${research.extract_error})` : ""}`,
+            research,
+            { model: live ? (research.cached ? "Tavily · cached (0 new credits)" : `Tavily · ${research.credits ?? 0} credits`) : "offline fixture" },
+            research.cached ? undefined : (research.search_ms ?? 0) + (research.extract_ms ?? 0) || undefined
+          )
+        );
+      }
 
-    const { brief, meta } = await composeDecisionBrief(bill, verdict, research, pick(models.reason));
-    if (meta.usage) usages.push(meta.usage);
-    localSteps.push(step("llm", "Decision brief", brief.headline, brief, meta));
+      const { brief, meta } = await composeDecisionBrief(bill, verdict, research, pick(models.reason), left(25_000));
+      if (meta.usage) u.push(meta.usage);
+      if (meta.mode === "fallback") fallbacks.push(`${bill.payee}: brief used a labeled template (${meta.error})`);
+      localSteps.push(step("llm", brief.mode === "fallback" ? "Decision brief (FALLBACK template)" : "Decision brief", brief.headline, brief, meta));
 
-    if (needsUltraReview(bill, verdict)) {
-      const ur = await ultraReview(bill, brief, research, models.ultra);
-      if (ur.meta.usage) usages.push(ur.meta.usage);
-      if (ur.review) brief.ultra_review = ur.review;
-      localSteps.push(
-        step(
-          "llm",
-          ur.review ? `Ultra escalation review → ${ur.review.verdict}` : "Ultra escalation review (skipped offline)",
-          ur.review ? `${ur.review.reason}${ur.review.unsupported_claims.length ? `\nUnsupported: ${ur.review.unsupported_claims.join(" | ")}` : ""}` : "Runs only in live mode on high-stakes escalations.",
-          ur.review,
-          ur.meta
-        )
-      );
-    }
-    localSteps.push(step("brief", "notify_human", brief.speakable, { recommended_action: brief.recommended_action }));
-    results.push({ bill_id: bill.id, payee: bill.payee, decision: "HUMAN_REQUIRED", reasons: verdict.reasons, funding_ok: verdict.funding_ok, research, brief, steps: localSteps, action: "escalated" });
-    timeline.push(...localSteps);
+      if (needsUltraReview(bill, verdict)) {
+        const budget = left(20_000);
+        const ur = budget >= 6000 && brief.mode === "live"
+          ? await ultraReview(bill, brief, research, models.ultra, budget)
+          : { meta: { mode: hasNebiusKey() ? ("fallback" as const) : ("offline" as const), model: "skipped", used_token_factory: false, error: hasNebiusKey() ? (brief.mode !== "live" ? "brief was a fallback" : "out of time budget") : undefined } };
+        if (ur.meta.usage) u.push(ur.meta.usage);
+        const review = "review" in ur ? ur.review : undefined;
+        if (review) brief.ultra_review = review;
+        if (!review && hasNebiusKey()) fallbacks.push(`${bill.payee}: Ultra review skipped (${ur.meta.error})`);
+        localSteps.push(
+          step(
+            "llm",
+            review ? `Ultra escalation review → ${review.verdict}` : hasNebiusKey() ? "Ultra escalation review (skipped, see note)" : "Ultra escalation review (skipped offline)",
+            review
+              ? `${review.reason}${review.unsupported_claims.length ? `\nUnsupported: ${review.unsupported_claims.join(" | ")}` : ""}`
+              : hasNebiusKey()
+                ? "The brief above is still shown; it just lacks the second-opinion check."
+                : "Runs only in live mode on high-stakes escalations.",
+            review,
+            ur.meta
+          )
+        );
+      }
+      localSteps.push(step("brief", "notify_human", brief.speakable, { recommended_action: brief.recommended_action }));
+      const r: InvestigationResult = { bill_id: bill.id, payee: bill.payee, decision: "HUMAN_REQUIRED", reasons: verdict.reasons, funding_ok: verdict.funding_ok, research, brief, steps: localSteps, action: "escalated" };
+      return { r, u, c };
+    })
+  );
+  for (const { r, u, c } of perBill) {
+    results.push(r);
+    usages.push(...u);
+    credits += c;
+    timeline.push(...r.steps);
   }
 
   const response: InvestigateResponse = {
     ok: true,
     mode: runtimeMode(),
+    run_mode: runtimeMode() === "offline" ? "offline" : runtimeMode() === "partial" || fallbacks.length ? "degraded" : "live",
+    fallbacks,
     models: { fast: models.fast, reason: models.reason, ultra: models.ultra },
     receipt: buildReceipt(usages, credits, models.ultra),
     started_at,

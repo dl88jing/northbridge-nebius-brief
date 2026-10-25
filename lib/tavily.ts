@@ -65,13 +65,17 @@ export function setFetcher(f: Fetcher | null) {
   fetcher = f ?? ((...a) => fetch(...a));
 }
 
-async function post<T>(path: string, body: unknown): Promise<T> {
+async function post<T>(path: string, body: unknown, timeoutMs = 12_000): Promise<T> {
   const res = await fetcher(`${TAVILY}${path}`, {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${getTavilyKey()}` },
     body: JSON.stringify(body),
+    signal: AbortSignal.timeout(timeoutMs),
   });
-  if (!res.ok) throw new Error(`Tavily ${path} HTTP ${res.status}`);
+  if (!res.ok) {
+    const why = res.status === 432 || res.status === 433 ? " (plan credit limit reached)" : res.status === 429 ? " (rate limited)" : "";
+    throw new Error(`Tavily ${path} HTTP ${res.status}${why}`);
+  }
   return (await res.json()) as T;
 }
 
@@ -79,8 +83,38 @@ async function post<T>(path: string, body: unknown): Promise<T> {
  * Live research = Tavily /search (advanced) + /extract on the top sources,
  * with the extract reranked against our question so the brief can quote real passages.
  */
+/** Same question within 6 h on the same instance → reuse the live result (0 new credits). Keeps free-plan credit use modest. */
+const CACHE_MS = 6 * 60 * 60 * 1000;
+const cache = new Map<string, { at: number; bundle: ResearchBundle }>();
+export function clearResearchCache() {
+  cache.clear();
+}
+
+/** Drop duplicate sources (same page under two URLs, e.g. with and without a locale path). */
+function dedupeResults<T extends { title: string; url: string }>(rows: T[]): T[] {
+  const seen = new Set<string>();
+  return rows.filter((r) => {
+    let host = r.url;
+    try {
+      host = new URL(r.url).hostname.replace(/^www\./, "");
+    } catch {}
+    const k = `${host}|${r.title.trim().toLowerCase()}`;
+    if (seen.has(k)) return false;
+    seen.add(k);
+    return true;
+  });
+}
+
 export async function researchWeb(plan: ResearchPlan): Promise<ResearchBundle> {
   if (!hasTavilyKey()) return offlineResearch(plan);
+  const hit = cache.get(plan.query);
+  if (hit && Date.now() - hit.at < CACHE_MS) return { ...hit.bundle, credits: 0, cached: true };
+  const out = await researchLive(plan);
+  if (out.source === "tavily" && !out.error) cache.set(plan.query, { at: Date.now(), bundle: out });
+  return out;
+}
+
+async function researchLive(plan: ResearchPlan): Promise<ResearchBundle> {
   const bundle: ResearchBundle = { query: plan.query, source: "tavily", results: [], credits: 0 };
   try {
     const t0 = Date.now();
@@ -96,7 +130,7 @@ export async function researchWeb(plan: ResearchPlan): Promise<ResearchBundle> {
     });
     bundle.search_ms = Date.now() - t0;
     bundle.credits = (bundle.credits ?? 0) + (s.usage?.credits ?? 0);
-    bundle.results = (s.results || []).map((r) => ({
+    bundle.results = dedupeResults(s.results || []).map((r) => ({
       title: r.title,
       url: r.url,
       snippet: (r.content || "").slice(0, 320),
@@ -104,7 +138,7 @@ export async function researchWeb(plan: ResearchPlan): Promise<ResearchBundle> {
     }));
   } catch (e) {
     const fb = offlineResearch(plan);
-    return { ...fb, error: e instanceof Error ? e.message : "Tavily search failed" };
+    return { ...fb, fallback: true, error: e instanceof Error ? e.message : "Tavily search failed" };
   }
 
   const top = bundle.results.slice(0, 3).map((r) => r.url);
@@ -118,7 +152,7 @@ export async function researchWeb(plan: ResearchPlan): Promise<ResearchBundle> {
         extract_depth: "basic",
         format: "text",
         include_usage: true,
-      });
+      }, 10_000);
       bundle.extract_ms = Date.now() - t1;
       bundle.credits = (bundle.credits ?? 0) + (x.usage?.credits ?? 0);
       let n = 0;
@@ -131,7 +165,8 @@ export async function researchWeb(plan: ResearchPlan): Promise<ResearchBundle> {
       }
       bundle.extracted_count = n;
     } catch (e) {
-      bundle.error = e instanceof Error ? e.message : "Tavily extract failed";
+      // Search results are still real; the brief just uses snippets instead of extracts.
+      bundle.extract_error = e instanceof Error ? e.message : "Tavily extract failed";
     }
   }
   return bundle;

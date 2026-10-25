@@ -11,15 +11,25 @@ export async function POST(req: NextRequest) {
       billIds: body.billIds,
       reset: body.reset !== false,
       goal: body.goal,
+      offline: body.offline === true,
     });
     return NextResponse.json(result);
   } catch (e: unknown) {
-    const message = e instanceof Error ? e.message : "investigate failed";
-    return NextResponse.json({ ok: false, error: message }, { status: 500 });
+    return NextResponse.json(await offlineFallback(e));
   }
 }
 
+/** Never show judges a 500: if the live path throws, serve the labeled offline run and say why. */
+async function offlineFallback(e: unknown) {
+  const message = e instanceof Error ? e.message : "investigate failed";
+  const result = await runInvestigation({ reset: true, offline: true });
+  return { ...result, run_mode: "degraded" as const, fallbacks: [`Live run failed (${message}); showing the labeled offline run`, ...result.fallbacks] };
+}
+
 export async function GET() {
-  const result = await runInvestigation({ reset: true });
-  return NextResponse.json(result);
+  try {
+    return NextResponse.json(await runInvestigation({ reset: true }));
+  } catch (e: unknown) {
+    return NextResponse.json(await offlineFallback(e));
+  }
 }

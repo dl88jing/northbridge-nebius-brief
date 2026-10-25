@@ -48,8 +48,8 @@ type Status = {
   last_duration_ms?: number | null;
   runtime?: { last_summary?: Summary };
 };
-type Investigate = { mode?: string; summary?: Summary; timeline?: TimelineStep[]; receipt?: Receipt; duration_ms?: number; results?: { bill_id: string; brief?: Brief; reasons?: string[]; action?: string }[] };
-type Bench = { ok: boolean; error?: string; routed?: { cost_usd: number; tokens: number; duration_ms: number }; all_ultra?: { cost_usd: number; tokens: number; duration_ms: number }; savings_pct?: number | null; measured_at?: string };
+type Investigate = { mode?: string; run_mode?: "live" | "degraded" | "offline"; fallbacks?: string[]; summary?: Summary; timeline?: TimelineStep[]; receipt?: Receipt; duration_ms?: number; results?: { bill_id: string; brief?: Brief; reasons?: string[]; action?: string }[] };
+type Bench = { ok: boolean; error?: string; complete?: boolean; tavily_credits?: number; routed?: { cost_usd: number; tokens: number; duration_ms: number }; all_ultra?: { cost_usd: number; tokens: number; duration_ms: number }; savings_pct?: number | null; measured_at?: string };
 
 const SUGGESTIONS = ["Run full quiet investigation", "Is the second PG&E a duplicate?", "Brief me on the dental bill", "What can auto-handle tonight?"];
 
@@ -60,6 +60,7 @@ export default function Home() {
   const [status, setStatus] = useState<Status | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [note, setNote] = useState<string | null>(null);
   const [inv, setInv] = useState<Investigate | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
   const [goal, setGoal] = useState(SUGGESTIONS[0]);
@@ -82,17 +83,38 @@ export default function Home() {
     refresh();
   }, [refresh]);
 
-  const run = async (customGoal?: string) => {
-    setBusy(true);
-    setError(null);
+  const post = async (body: Record<string, unknown>, ms: number) => {
+    const ctl = new AbortController();
+    const timer = setTimeout(() => ctl.abort(), ms);
     try {
       const res = await fetch("/api/investigate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ goal: customGoal || goal, reset: true }),
+        body: JSON.stringify(body),
+        signal: ctl.signal,
       });
       const data = await res.json();
-      if (!res.ok || data.ok === false) throw new Error(data.error || "Investigation failed");
+      if (!res.ok || data.ok === false) throw new Error(data.error || `HTTP ${res.status}`);
+      return data as Investigate;
+    } finally {
+      clearTimeout(timer);
+    }
+  };
+
+  const run = async (customGoal?: string) => {
+    setBusy(true);
+    setError(null);
+    setNote(null);
+    const body = { goal: customGoal || goal, reset: true };
+    try {
+      let data: Investigate;
+      try {
+        data = await post(body, 58_000);
+      } catch {
+        // Live providers did not answer in time (or the function was cut off): show the labeled offline run instead of an error.
+        data = await post({ ...body, offline: true }, 20_000);
+        data = { ...data, run_mode: "degraded", fallbacks: ["Live providers did not answer in time, so this is the labeled offline run. Press Run again to retry live.", ...(data.fallbacks || [])] };
+      }
       setInv(data);
       type R = { bill_id: string; brief?: Brief; reasons?: string[] };
       const withBriefs: R[] = (data.results || []).filter((r: R) => r.brief);
@@ -100,10 +122,10 @@ export default function Home() {
         withBriefs.find((r) => r.brief?.ultra_review) ||
         [...withBriefs].sort((a, b) => (b.reasons?.length || 0) - (a.reasons?.length || 0))[0];
       if (pickBrief) setSelected(pickBrief.bill_id);
-      await refresh();
+      refresh();
       setTimeout(() => briefRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 150);
-    } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "Investigation failed");
+    } catch {
+      setNote("Could not reach the app server. Check your connection and press Run again.");
     } finally {
       setBusy(false);
     }
@@ -114,8 +136,8 @@ export default function Home() {
     try {
       const res = await fetch("/api/benchmark", { method: "POST" });
       setBench(await res.json());
-    } catch (e: unknown) {
-      setBench({ ok: false, error: e instanceof Error ? e.message : "benchmark failed" });
+    } catch {
+      setBench({ ok: false, error: "The benchmark did not finish in time. The figures in the README are from a recorded run." });
     } finally {
       setBenchBusy(false);
     }
@@ -135,6 +157,8 @@ export default function Home() {
   };
 
   const mode = status?.mode || "offline";
+  // The banner reflects what the last run actually did; before any run, it reflects which providers are configured.
+  const bannerMode = inv?.run_mode || (mode === "live" ? "live" : mode === "partial" ? "degraded" : "offline");
   // Prefer data from the run response itself: on serverless, /api/status may hit a different instance.
   const briefs = useMemo(() => {
     const fromRun: Record<string, Brief> = {};
@@ -157,7 +181,7 @@ export default function Home() {
 
   return (
     <main className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
-      {status && <ModeBanner mode={mode} tf={!!status.token_factory} tv={!!status.tavily} />}
+      {(status || inv) && <ModeBanner mode={bannerMode} tf={!!status?.token_factory} tv={!!status?.tavily} fallbacks={inv?.fallbacks || []} />}
 
       <header className="mb-6 mt-4 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         <div>
@@ -174,7 +198,12 @@ export default function Home() {
         </div>
       </header>
 
-      {error && (
+      {note && (
+        <div role="status" className="mb-6 rounded-xl border border-[var(--line)] bg-white px-4 py-3 text-[var(--muted)]">
+          {note}
+        </div>
+      )}
+      {error && !inv && (
         <div role="alert" className="mb-6 rounded-xl border border-[var(--warn)] bg-[#fbeeea] px-4 py-3 text-[var(--warn)]">
           {error}
         </div>
@@ -277,7 +306,7 @@ export default function Home() {
                   {bench && !bench.ok && <p className="mt-2 text-[var(--warn)]">{bench.error}</p>}
                   {bench?.ok && (
                     <p className="mt-2">
-                      Measured side by side: routed {usd(bench.routed?.cost_usd)} ({bench.routed?.tokens} tok, {((bench.routed?.duration_ms || 0) / 1000).toFixed(1)}s) vs all-Ultra {usd(bench.all_ultra?.cost_usd)} ({bench.all_ultra?.tokens} tok, {((bench.all_ultra?.duration_ms || 0) / 1000).toFixed(1)}s). <strong>{bench.savings_pct}% cheaper.</strong>
+                      Measured side by side: routed {usd(bench.routed?.cost_usd)} ({bench.routed?.tokens} tok, {((bench.routed?.duration_ms || 0) / 1000).toFixed(1)}s) vs all-Ultra {usd(bench.all_ultra?.cost_usd)} ({bench.all_ultra?.tokens} tok, {((bench.all_ultra?.duration_ms || 0) / 1000).toFixed(1)}s). <strong>{bench.savings_pct}% cheaper.</strong>{bench.complete === false ? " (One step fell back, so this pair is not like-for-like; run again.)" : ""}
                     </p>
                   )}
                 </div>
@@ -335,7 +364,7 @@ export default function Home() {
   );
 }
 
-function ModeBanner({ mode, tf, tv }: { mode: string; tf: boolean; tv: boolean }) {
+function ModeBanner({ mode, tf, tv, fallbacks }: { mode: string; tf: boolean; tv: boolean; fallbacks: string[] }) {
   if (mode === "live") {
     return (
       <div role="status" className="rounded-xl border border-[var(--ok)] bg-[#e9f3ec] px-4 py-2 text-sm text-[var(--ok)]">
@@ -343,22 +372,37 @@ function ModeBanner({ mode, tf, tv }: { mode: string; tf: boolean; tv: boolean }
       </div>
     );
   }
+  if (mode === "degraded") {
+    return (
+      <div role="status" className="rounded-xl border border-[var(--line)] bg-white px-4 py-2 text-sm text-[var(--muted)]">
+        <strong className="text-[var(--ink)]">LIVE, with a labeled fallback.</strong> Most steps ran on Token Factory and Tavily; the steps below used a labeled template or fixture instead, and they are marked in the trace.
+        {fallbacks.length > 0 && (
+          <ul className="mt-1 list-disc pl-5">
+            {fallbacks.slice(0, 4).map((f) => (
+              <li key={f}>{f}</li>
+            ))}
+          </ul>
+        )}
+      </div>
+    );
+  }
   return (
     <div role="status" className="rounded-xl border-2 border-[var(--copper)] bg-[#fbf0e4] px-4 py-3 text-sm text-[#7a3f17]">
-      <strong>{mode === "partial" ? "PARTIALLY LIVE" : "OFFLINE DEMO"}.</strong>{" "}
-      {tf ? "Token Factory is live. " : "No Token Factory calls: plans and briefs come from templates. "}
-      {tv ? "Tavily is live." : "No Tavily calls: sources are labeled fixtures (example.com links)."} The rules engine, UI and trace are real; model output and costs are not.
+      <strong>OFFLINE DEMO.</strong>{" "}
+      {tf ? "" : "No Token Factory calls: plans and briefs come from templates. "}
+      {tv ? "" : "No Tavily calls: sources are labeled fixtures (example.com links)."} The rules engine, UI and trace are real; model output and costs are not.
     </div>
   );
 }
 
 function BriefCard({ b }: { b: Brief }) {
   const live = b.mode === "live";
+  const liveSources = (b.citations || []).some((c) => !c.url.includes("example.com"));
   return (
     <article className="mt-4 space-y-3">
       <div className="flex flex-wrap gap-2">
         <span className="pill pill-warn">Needs you</span>
-        <span className={`pill ${live ? "pill-ok" : "pill-warn"}`}>{live ? "live model output" : "offline template"}</span>
+        <span className={`pill ${live ? "pill-ok" : "pill-warn"}`}>{live ? "live model output" : b.mode === "fallback" ? "fallback template (live call failed)" : "offline template"}</span>
         <span className="pill mono">{short(b.model_used)}</span>
       </div>
       <h3 className="display text-xl">{b.headline}</h3>
@@ -371,7 +415,7 @@ function BriefCard({ b }: { b: Brief }) {
       {b.research_summary && <p className="text-sm"><strong>Research:</strong> {b.research_summary}</p>}
       {b.citations && b.citations.length > 0 && (
         <div className="rounded-xl border border-[var(--line)] bg-[#f7faf6] p-3 text-sm">
-          <strong>Sources {live ? "(Tavily)" : "(offline fixtures)"}</strong>
+          <strong>Sources {liveSources ? "(Tavily)" : "(offline fixtures)"}</strong>
           <ol className="mt-1 space-y-1">
             {b.citations.map((c) => (
               <li key={c.n}>[{c.n}] <a className="underline break-all" href={c.url} target="_blank" rel="noreferrer">{c.title}</a></li>

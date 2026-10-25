@@ -1,5 +1,5 @@
 import { getModels, hasNebiusKey } from "./config";
-import { chat, extractJson } from "./llm";
+import { CallError, chat, extractJson } from "./llm";
 import type { Bill, DecisionBrief, LlmUsage, ResearchBundle, UltraReview } from "./types";
 import type { PolicyVerdict } from "./policy";
 
@@ -60,7 +60,7 @@ function sourcesBlock(research?: ResearchBundle): string {
     .join("\n\n");
 }
 
-export async function planInvestigation(goal: string, model?: string): Promise<{ plan: string; meta: LlmCallMeta }> {
+export async function planInvestigation(goal: string, model?: string, timeout_ms = 15_000): Promise<{ plan: string; meta: LlmCallMeta }> {
   const m = model || getModels().fast;
   if (!hasNebiusKey()) {
     return {
@@ -75,12 +75,12 @@ export async function planInvestigation(goal: string, model?: string): Promise<{
         { role: "system", content: "You are the Northbridge Brief planner. Output a short numbered investigation plan (max 5 steps, one line each). No preamble." },
         { role: "user", content: goal },
       ],
-      { max_tokens: 400 }
+      { max_tokens: 400, timeout_ms }
     );
     return { plan: r.text.trim() || "Investigate anomalies.", meta: { mode: "live", model: m, used_token_factory: true, usage: r.usage } };
   } catch (e) {
     return {
-      plan: `Fallback plan for: ${goal}`,
+      plan: `Fallback plan (Token Factory did not answer in time): ${goal}\n1) List dues 2) Policy gate 3) Research anomalies 4) Compose cited briefs 5) Auto-handle routine items.`,
       meta: { mode: "fallback", model: m, used_token_factory: false, error: e instanceof Error ? e.message : "plan failed" },
     };
   }
@@ -90,7 +90,8 @@ export async function composeDecisionBrief(
   bill: Bill,
   verdict: PolicyVerdict,
   research?: ResearchBundle,
-  model?: string
+  model?: string,
+  timeout_ms = 25_000
 ): Promise<{ brief: DecisionBrief; meta: LlmCallMeta }> {
   if (!hasNebiusKey()) return offlineBrief(bill, verdict, research);
   const m = model || getModels().reason;
@@ -100,9 +101,9 @@ Cite sources inline as [n]. If sources do not support a claim, say so.
 Return ONLY a JSON object with keys: headline, situation, why_it_matters, recommended_action, questions_for_humans (array of 2 strings), speakable (one or two sentences addressed to Avery and Morgan), research_summary (2-3 sentences with [n] citations).`;
   const user = `BILL:\n${JSON.stringify(bill)}\n\nPOLICY VERDICT:\n${JSON.stringify({ decision: verdict.decision, reasons: verdict.reasons })}\n\nSOURCES:\n${sourcesBlock(research)}`;
   try {
-    const r = await chat(m, [{ role: "system", content: system }, { role: "user", content: user }], { temperature: 0.3, max_tokens: 1400 });
+    const r = await chat(m, [{ role: "system", content: system }, { role: "user", content: user }], { temperature: 0.3, max_tokens: 1400, timeout_ms });
     const parsed = extractJson<Partial<DecisionBrief>>(r.text);
-    if (!parsed) throw new Error("model reply was not JSON");
+    if (!parsed) throw new CallError(`model reply was not JSON (finish: ${r.finish_reason ?? "?"})`, r.usage);
     const brief: DecisionBrief = {
       bill_id: bill.id,
       headline: parsed.headline || `${bill.payee} needs review`,
@@ -119,7 +120,9 @@ Return ONLY a JSON object with keys: headline, situation, why_it_matters, recomm
     return { brief, meta: { mode: "live", model: m, used_token_factory: true, usage: r.usage } };
   } catch (e) {
     const fb = offlineBrief(bill, verdict, research, e instanceof Error ? e.message : "brief failed");
-    fb.brief.headline = `[fallback] ${fb.brief.headline}`;
+    fb.brief.mode = "fallback";
+    fb.brief.model_used = "template (live call failed)";
+    if (e instanceof CallError && e.usage) fb.meta.usage = e.usage;
     return fb;
   }
 }
@@ -134,7 +137,8 @@ export async function ultraReview(
   bill: Bill,
   brief: DecisionBrief,
   research?: ResearchBundle,
-  model?: string
+  model?: string,
+  timeout_ms = 25_000
 ): Promise<{ review?: UltraReview; meta: LlmCallMeta }> {
   const m = model || getModels().ultra;
   if (!hasNebiusKey() || brief.mode !== "live") {
@@ -144,9 +148,9 @@ export async function ultraReview(
 List any claim not supported by the bill or sources. Return ONLY JSON: {"verdict":"confirm"|"revise","unsupported_claims":[string],"final_recommendation":string,"reason":string}.`;
   const user = `BILL:\n${JSON.stringify(bill)}\n\nBRIEF:\n${JSON.stringify({ headline: brief.headline, situation: brief.situation, recommended_action: brief.recommended_action, research_summary: brief.research_summary })}\n\nSOURCES:\n${sourcesBlock(research)}`;
   try {
-    const r = await chat(m, [{ role: "system", content: system }, { role: "user", content: user }], { temperature: 0.1, max_tokens: 900 });
+    const r = await chat(m, [{ role: "system", content: system }, { role: "user", content: user }], { temperature: 0.1, max_tokens: 900, timeout_ms });
     const p = extractJson<Partial<UltraReview>>(r.text);
-    if (!p) throw new Error("reviewer reply was not JSON");
+    if (!p) throw new CallError(`reviewer reply was not JSON (finish: ${r.finish_reason ?? "?"})`, r.usage);
     return {
       review: {
         verdict: p.verdict === "revise" ? "revise" : "confirm",
@@ -158,6 +162,8 @@ List any claim not supported by the bill or sources. Return ONLY JSON: {"verdict
       meta: { mode: "live", model: m, used_token_factory: true, usage: r.usage },
     };
   } catch (e) {
-    return { meta: { mode: "fallback", model: m, used_token_factory: false, error: e instanceof Error ? e.message : "review failed" } };
+    return {
+      meta: { mode: "fallback", model: m, used_token_factory: false, error: e instanceof Error ? e.message : "review failed", usage: e instanceof CallError ? e.usage : undefined },
+    };
   }
 }

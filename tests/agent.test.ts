@@ -94,3 +94,35 @@ test("status never leaks key values", () => {
   assert.ok(!s.includes("SHOULD-NOT-APPEAR"));
   assert.match(s, /"token_factory":true/);
 });
+
+test("provider failure never surfaces an error: labeled fallbacks, run_mode=degraded", async () => {
+  process.env.NEBIUS_API_KEY = "test-not-a-real-key";
+  process.env.TAVILY_API_KEY = "test-not-a-real-key";
+  const { clearResearchCache } = await import("../lib/tavily");
+  clearResearchCache();
+  setChatClient({ chat: { completions: { create: async () => { throw new Error("402 insufficient balance"); } } } } as ChatClient);
+  setFetcher((async () => new Response("{}", { status: 432 })) as typeof fetch);
+  const r = await runInvestigation({ persist: false, budget_ms: 20_000 });
+  assert.equal(r.ok, true);
+  assert.equal(r.run_mode, "degraded");
+  assert.ok(r.fallbacks.length > 0);
+  assert.equal(r.summary.escalated, 4);
+  for (const res of r.results.filter((x) => x.brief)) {
+    assert.equal(res.brief!.mode, "fallback");
+    assert.ok(res.brief!.citations && res.brief!.citations.length > 0);
+  }
+  assert.ok(r.timeline.some((s) => /FALLBACK/.test(s.title)));
+  assert.ok(r.fallbacks.some((f) => /credit limit/.test(f)), "Tavily credit exhaustion is named");
+});
+
+test("offline flag forces the labeled offline path even with keys set (no network)", async () => {
+  process.env.NEBIUS_API_KEY = "test-not-a-real-key";
+  process.env.TAVILY_API_KEY = "test-not-a-real-key";
+  let calls = 0;
+  setChatClient({ chat: { completions: { create: async () => { calls++; throw new Error("no"); } } } } as ChatClient);
+  setFetcher((async () => { calls++; throw new Error("no"); }) as typeof fetch);
+  const r = await runInvestigation({ persist: false, offline: true });
+  assert.equal(r.mode, "offline");
+  assert.equal(r.run_mode, "offline");
+  assert.equal(calls, 0);
+});
