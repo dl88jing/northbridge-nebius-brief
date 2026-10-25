@@ -99,6 +99,24 @@ export async function chat(
 }
 
 /** Pull the first JSON object out of a model reply (handles ```json fences and reasoning preambles). */
+function repairJson(raw: string): string {
+  let out = "";
+  let inStr = false;
+  let esc = false;
+  for (const ch of raw) {
+    if (inStr) {
+      if (esc) esc = false;
+      else if (ch === "\\") esc = true;
+      else if (ch === '"') inStr = false;
+      else if (ch === "\n") { out += "\\n"; continue; }
+      else if (ch === "\r") continue;
+      else if (ch === "\t") { out += " "; continue; }
+    } else if (ch === '"') inStr = true;
+    out += ch;
+  }
+  return out.replace(/,\s*([}\]])/g, "$1");
+}
+
 export function extractJson<T = Record<string, unknown>>(text: string): T | null {
   const cleaned = text.replace(/<think>[\s\S]*?<\/think>/g, "");
   const start = cleaned.indexOf("{");
@@ -119,10 +137,16 @@ export function extractJson<T = Record<string, unknown>>(text: string): T | null
     else if (ch === "}") {
       depth--;
       if (depth === 0) {
+        const raw = cleaned.slice(start, i + 1);
         try {
-          return JSON.parse(cleaned.slice(start, i + 1)) as T;
+          return JSON.parse(raw) as T;
         } catch {
-          return null;
+          // Common near-misses from LLMs: trailing commas, raw newlines/tabs inside strings.
+          try {
+            return JSON.parse(repairJson(raw)) as T;
+          } catch {
+            return null;
+          }
         }
       }
     }

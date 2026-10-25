@@ -8,6 +8,8 @@ export type LlmCallMeta = {
   model: string;
   used_token_factory: boolean;
   usage?: LlmUsage;
+  /** Usage of an earlier attempt whose reply could not be parsed (still billed, so still counted). */
+  retry_usage?: LlmUsage;
   error?: string;
 };
 
@@ -100,9 +102,27 @@ Write a crisp decision brief. Never invent amounts or facts. Use only the bill, 
 Cite sources inline as [n]. If sources do not support a claim, say so.
 Return ONLY a JSON object with keys: headline, situation, why_it_matters, recommended_action, questions_for_humans (array of 2 strings), speakable (one or two sentences addressed to Avery and Morgan), research_summary (2-3 sentences with [n] citations).`;
   const user = `BILL:\n${JSON.stringify(bill)}\n\nPOLICY VERDICT:\n${JSON.stringify({ decision: verdict.decision, reasons: verdict.reasons })}\n\nSOURCES:\n${sourcesBlock(research)}`;
+  const t0 = Date.now();
+  let retry_usage: LlmUsage | undefined;
   try {
-    const r = await chat(m, [{ role: "system", content: system }, { role: "user", content: user }], { temperature: 0.3, max_tokens: 1400, timeout_ms });
-    const parsed = extractJson<Partial<DecisionBrief>>(r.text);
+    let r = await chat(m, [{ role: "system", content: system }, { role: "user", content: user }], { temperature: 0.3, max_tokens: 1400, timeout_ms });
+    let parsed = extractJson<Partial<DecisionBrief>>(r.text);
+    const leftMs = timeout_ms - (Date.now() - t0);
+    if (!parsed && leftMs > 8000) {
+      // One repair attempt: same prompt, plus a reminder that only a JSON object is accepted.
+      retry_usage = r.usage;
+      r = await chat(
+        m,
+        [
+          { role: "system", content: system },
+          { role: "user", content: user },
+          { role: "assistant", content: r.text.slice(0, 4000) },
+          { role: "user", content: "That reply was not a valid JSON object. Reply again with ONLY the JSON object, no prose, no code fences." },
+        ],
+        { temperature: 0.1, max_tokens: 1400, timeout_ms: leftMs - 500 }
+      );
+      parsed = extractJson<Partial<DecisionBrief>>(r.text);
+    }
     if (!parsed) throw new CallError(`model reply was not JSON (finish: ${r.finish_reason ?? "?"})`, r.usage);
     const brief: DecisionBrief = {
       bill_id: bill.id,
@@ -117,12 +137,13 @@ Return ONLY a JSON object with keys: headline, situation, why_it_matters, recomm
       mode: "live",
       citations: citationsFor(research),
     };
-    return { brief, meta: { mode: "live", model: m, used_token_factory: true, usage: r.usage } };
+    return { brief, meta: { mode: "live", model: m, used_token_factory: true, usage: r.usage, retry_usage } };
   } catch (e) {
     const fb = offlineBrief(bill, verdict, research, e instanceof Error ? e.message : "brief failed");
     fb.brief.mode = "fallback";
     fb.brief.model_used = "template (live call failed)";
     if (e instanceof CallError && e.usage) fb.meta.usage = e.usage;
+    fb.meta.retry_usage = retry_usage;
     return fb;
   }
 }

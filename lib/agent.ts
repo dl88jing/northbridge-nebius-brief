@@ -121,6 +121,7 @@ async function runInvestigationInner(opts?: RunOpts): Promise<InvestigateRespons
       }
 
       const { brief, meta } = await composeDecisionBrief(bill, verdict, research, pick(models.reason), left(25_000));
+      if (meta.retry_usage) u.push(meta.retry_usage);
       if (meta.usage) u.push(meta.usage);
       if (meta.mode === "fallback") fallbacks.push(`${bill.payee}: Nemotron brief ${why(meta.error)}, so a labeled template was used`);
       localSteps.push(step("llm", brief.mode === "fallback" ? "Decision brief (FALLBACK template)" : "Decision brief", brief.headline, brief, meta));
