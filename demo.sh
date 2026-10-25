@@ -15,18 +15,21 @@ fi
 
 case "$cmd" in
   offline|demo)
-    echo "Running offline investigation (no API keys required)..."
+    echo "Running the agent end to end (live if keys are set, labeled offline otherwise)..."
     npx tsx scripts/demo.ts
     ;;
   dev|web)
     echo "Starting Next.js dashboard at http://127.0.0.1:3000"
     npm run dev
     ;;
+  test)
+    npm test
+    ;;
   build)
     npm run build
     ;;
   *)
-    echo "Usage: ./demo.sh [offline|dev|build]"
+    echo "Usage: ./demo.sh [demo|dev|test|build]"
     exit 1
     ;;
 esac

@@ -1,31 +1,31 @@
-import OpenAI from "openai";
-import { getModels, getNebiusKey, hasNebiusKey } from "./config";
-import type { Bill, DecisionBrief, ResearchBundle } from "./types";
+import { getModels, hasNebiusKey } from "./config";
+import { chat, extractJson } from "./llm";
+import type { Bill, DecisionBrief, LlmUsage, ResearchBundle, UltraReview } from "./types";
 import type { PolicyVerdict } from "./policy";
 
 export type LlmCallMeta = {
-  mode: "live" | "offline";
+  mode: "live" | "offline" | "fallback";
   model: string;
   used_token_factory: boolean;
+  usage?: LlmUsage;
+  error?: string;
 };
 
-function offlineBrief(
-  bill: Bill,
-  verdict: PolicyVerdict,
-  research?: ResearchBundle
-): { brief: DecisionBrief; meta: LlmCallMeta } {
-  const model = getModels().reason + " (offline-sim)";
+export function citationsFor(research?: ResearchBundle) {
+  return (research?.results || []).slice(0, 5).map((r, i) => ({ n: i + 1, title: r.title, url: r.url }));
+}
+
+function offlineBrief(bill: Bill, verdict: PolicyVerdict, research?: ResearchBundle, reason = "offline"): { brief: DecisionBrief; meta: LlmCallMeta } {
+  const model = "template (no model call)";
+  const citations = citationsFor(research);
   const research_summary = research?.results?.length
-    ? research.results.map((r) => `${r.title}: ${r.snippet}`).join(" ")
+    ? research.results.slice(0, 3).map((r, i) => `[${i + 1}] ${r.title}: ${r.snippet}`).join(" ")
     : undefined;
-
-  const headline =
-    verdict.rule_ids.includes("duplicate_charge")
-      ? `Possible duplicate ${bill.payee} charge`
-      : verdict.rule_ids.includes("amount_out_of_band")
-        ? `${bill.payee} amount looks unexpected`
-        : `${bill.payee} needs a human decision`;
-
+  const headline = verdict.rule_ids.includes("duplicate_charge")
+    ? `Possible duplicate ${bill.payee} charge`
+    : verdict.rule_ids.includes("amount_out_of_band")
+      ? `${bill.payee} amount looks unexpected`
+      : `${bill.payee} needs a human decision`;
   const recommended =
     bill.category === "medical"
       ? "Confirm insurance remittance (EOB) before paying the full estimate."
@@ -34,153 +34,130 @@ function offlineBrief(
         : verdict.rule_ids.includes("amount_out_of_band")
           ? "Review plan change / cancel or accept the new price before autopay."
           : "Review the brief and approve or snooze.";
-
-  const brief: DecisionBrief = {
-    bill_id: bill.id,
-    headline,
-    situation: `${bill.payee} is due ${bill.due_date} for $${bill.amount.toFixed(2)}. ${bill.notes}`,
-    why_it_matters: verdict.reasons.join(" · "),
-    recommended_action: recommended,
-    questions_for_humans: [
-      "Do you recognize this charge?",
-      "Should Northbridge proceed, hold, or negotiate?",
-    ],
-    research_summary,
-    speakable: `Avery, Morgan — ${headline}. ${recommended}`,
-    model_used: model,
-    mode: "offline",
-  };
   return {
-    brief,
-    meta: { mode: "offline", model, used_token_factory: false },
+    brief: {
+      bill_id: bill.id,
+      headline,
+      situation: `${bill.payee} is due ${bill.due_date} for $${bill.amount.toFixed(2)}. ${bill.notes}`,
+      why_it_matters: verdict.reasons.join(" · "),
+      recommended_action: recommended,
+      questions_for_humans: ["Do you recognize this charge?", "Should Northbridge proceed, hold, or negotiate?"],
+      research_summary,
+      speakable: `Avery, Morgan: ${headline}. ${recommended}`,
+      model_used: model,
+      mode: "offline",
+      citations,
+    },
+    meta: { mode: reason === "offline" ? "offline" : "fallback", model, used_token_factory: false, error: reason === "offline" ? undefined : reason },
   };
+}
+
+function sourcesBlock(research?: ResearchBundle): string {
+  if (!research?.results?.length) return "(no sources)";
+  return research.results
+    .slice(0, 5)
+    .map((r, i) => `[${i + 1}] ${r.title} <${r.url}>\n${r.extract || r.snippet}`)
+    .join("\n\n");
+}
+
+export async function planInvestigation(goal: string, model?: string): Promise<{ plan: string; meta: LlmCallMeta }> {
+  const m = model || getModels().fast;
+  if (!hasNebiusKey()) {
+    return {
+      plan: `Offline plan for: ${goal}\n1) List dues 2) Policy gate 3) Research anomalies 4) Compose cited briefs 5) Auto-handle routine items.`,
+      meta: { mode: "offline", model: "template (no model call)", used_token_factory: false },
+    };
+  }
+  try {
+    const r = await chat(
+      m,
+      [
+        { role: "system", content: "You are the Northbridge Brief planner. Output a short numbered investigation plan (max 5 steps, one line each). No preamble." },
+        { role: "user", content: goal },
+      ],
+      { max_tokens: 400 }
+    );
+    return { plan: r.text.trim() || "Investigate anomalies.", meta: { mode: "live", model: m, used_token_factory: true, usage: r.usage } };
+  } catch (e) {
+    return {
+      plan: `Fallback plan for: ${goal}`,
+      meta: { mode: "fallback", model: m, used_token_factory: false, error: e instanceof Error ? e.message : "plan failed" },
+    };
+  }
 }
 
 export async function composeDecisionBrief(
   bill: Bill,
   verdict: PolicyVerdict,
-  research?: ResearchBundle
+  research?: ResearchBundle,
+  model?: string
 ): Promise<{ brief: DecisionBrief; meta: LlmCallMeta }> {
-  if (!hasNebiusKey()) {
-    return offlineBrief(bill, verdict, research);
-  }
-
-  const models = getModels();
-  const client = new OpenAI({
-    apiKey: getNebiusKey(),
-    baseURL: models.baseUrl,
-  });
-
+  if (!hasNebiusKey()) return offlineBrief(bill, verdict, research);
+  const m = model || getModels().reason;
   const system = `You are Northbridge Brief, a quiet household ops agent for Avery and Morgan Quinn.
-Write crisp decision briefs. Never invent amounts. Pseudonyms only. Escalate-only tone.
-Return STRICT JSON with keys: headline, situation, why_it_matters, recommended_action, questions_for_humans (array of strings), speakable, research_summary.`;
-
-  const user = JSON.stringify(
-    {
-      bill,
-      policy_verdict: verdict,
-      research: research || null,
-    },
-    null,
-    2
-  );
-
+Write a crisp decision brief. Never invent amounts or facts. Use only the bill, the policy verdict and the numbered SOURCES.
+Cite sources inline as [n]. If sources do not support a claim, say so.
+Return ONLY a JSON object with keys: headline, situation, why_it_matters, recommended_action, questions_for_humans (array of 2 strings), speakable (one or two sentences addressed to Avery and Morgan), research_summary (2-3 sentences with [n] citations).`;
+  const user = `BILL:\n${JSON.stringify(bill)}\n\nPOLICY VERDICT:\n${JSON.stringify({ decision: verdict.decision, reasons: verdict.reasons })}\n\nSOURCES:\n${sourcesBlock(research)}`;
   try {
-    const resp = await client.chat.completions.create({
-      model: models.reason,
-      temperature: 0.3,
-      messages: [
-        { role: "system", content: system },
-        { role: "user", content: user },
-      ],
-      response_format: { type: "json_object" },
-    });
-
-    const raw = resp.choices[0]?.message?.content || "{}";
-    const parsed = JSON.parse(raw) as Partial<DecisionBrief>;
+    const r = await chat(m, [{ role: "system", content: system }, { role: "user", content: user }], { temperature: 0.3, max_tokens: 1400 });
+    const parsed = extractJson<Partial<DecisionBrief>>(r.text);
+    if (!parsed) throw new Error("model reply was not JSON");
     const brief: DecisionBrief = {
       bill_id: bill.id,
       headline: parsed.headline || `${bill.payee} needs review`,
       situation: parsed.situation || bill.notes,
       why_it_matters: parsed.why_it_matters || verdict.reasons.join("; "),
-      recommended_action:
-        parsed.recommended_action || "Review before paying",
-      questions_for_humans: parsed.questions_for_humans || [
-        "Approve, hold, or renegotiate?",
-      ],
+      recommended_action: parsed.recommended_action || "Review before paying",
+      questions_for_humans: Array.isArray(parsed.questions_for_humans) ? parsed.questions_for_humans.map(String) : ["Approve, hold, or renegotiate?"],
       research_summary: parsed.research_summary,
-      speakable:
-        parsed.speakable ||
-        `Avery, Morgan — please review ${bill.payee} for $${bill.amount.toFixed(2)}.`,
-      model_used: models.reason,
+      speakable: parsed.speakable || `Avery, Morgan: please review ${bill.payee} for $${bill.amount.toFixed(2)}.`,
+      model_used: m,
       mode: "live",
+      citations: citationsFor(research),
     };
-    return {
-      brief,
-      meta: {
-        mode: "live",
-        model: models.reason,
-        used_token_factory: true,
-      },
-    };
-  } catch {
-    // Fall back to offline brief if live call fails
-    const fallback = offlineBrief(bill, verdict, research);
-    fallback.brief.headline = `[fallback] ${fallback.brief.headline}`;
-    fallback.meta.model = `${fallback.meta.model} (live-error-fallback)`;
-    return fallback;
+    return { brief, meta: { mode: "live", model: m, used_token_factory: true, usage: r.usage } };
+  } catch (e) {
+    const fb = offlineBrief(bill, verdict, research, e instanceof Error ? e.message : "brief failed");
+    fb.brief.headline = `[fallback] ${fb.brief.headline}`;
+    return fb;
   }
 }
 
-export async function planInvestigation(
-  goal: string
-): Promise<{ plan: string; meta: LlmCallMeta }> {
-  const models = getModels();
-  if (!hasNebiusKey()) {
-    return {
-      plan: `Offline plan for: ${goal}. 1) List dues 2) Evaluate policy 3) Research anomalies via Tavily/fixtures 4) Compose briefs with Nemotron reasoning pattern 5) Auto-handle routine items.`,
-      meta: {
-        mode: "offline",
-        model: models.fast + " (offline-sim)",
-        used_token_factory: false,
-      },
-    };
+/** High-stakes escalations get a second look from Nemotron 3 Ultra: does every claim trace to a source? */
+export function needsUltraReview(bill: Bill, verdict: PolicyVerdict): boolean {
+  const sensitive = ["medical", "tax", "legal"].includes(bill.category);
+  return verdict.decision === "HUMAN_REQUIRED" && (verdict.rule_ids.length >= 2 || sensitive || bill.amount >= 500);
+}
+
+export async function ultraReview(
+  bill: Bill,
+  brief: DecisionBrief,
+  research?: ResearchBundle,
+  model?: string
+): Promise<{ review?: UltraReview; meta: LlmCallMeta }> {
+  const m = model || getModels().ultra;
+  if (!hasNebiusKey() || brief.mode !== "live") {
+    return { meta: { mode: "offline", model: "skipped (offline)", used_token_factory: false } };
   }
-
-  const client = new OpenAI({
-    apiKey: getNebiusKey(),
-    baseURL: models.baseUrl,
-  });
-
+  const system = `You are the Northbridge escalation reviewer. Check a household decision brief against its numbered SOURCES and the BILL.
+List any claim not supported by the bill or sources. Return ONLY JSON: {"verdict":"confirm"|"revise","unsupported_claims":[string],"final_recommendation":string,"reason":string}.`;
+  const user = `BILL:\n${JSON.stringify(bill)}\n\nBRIEF:\n${JSON.stringify({ headline: brief.headline, situation: brief.situation, recommended_action: brief.recommended_action, research_summary: brief.research_summary })}\n\nSOURCES:\n${sourcesBlock(research)}`;
   try {
-    const resp = await client.chat.completions.create({
-      model: models.fast,
-      temperature: 0.2,
-      messages: [
-        {
-          role: "system",
-          content:
-            "You are Northbridge Brief planner. Output a short numbered investigation plan (max 6 steps).",
-        },
-        { role: "user", content: goal },
-      ],
-    });
+    const r = await chat(m, [{ role: "system", content: system }, { role: "user", content: user }], { temperature: 0.1, max_tokens: 900 });
+    const p = extractJson<Partial<UltraReview>>(r.text);
+    if (!p) throw new Error("reviewer reply was not JSON");
     return {
-      plan: resp.choices[0]?.message?.content || "Investigate anomalies.",
-      meta: {
-        mode: "live",
-        model: models.fast,
-        used_token_factory: true,
+      review: {
+        verdict: p.verdict === "revise" ? "revise" : "confirm",
+        unsupported_claims: Array.isArray(p.unsupported_claims) ? p.unsupported_claims.map(String) : [],
+        final_recommendation: p.final_recommendation || brief.recommended_action,
+        reason: p.reason || "",
+        model: m,
       },
+      meta: { mode: "live", model: m, used_token_factory: true, usage: r.usage },
     };
-  } catch {
-    return {
-      plan: `Fallback plan for: ${goal}`,
-      meta: {
-        mode: "offline",
-        model: models.fast + " (live-error-fallback)",
-        used_token_factory: false,
-      },
-    };
+  } catch (e) {
+    return { meta: { mode: "fallback", model: m, used_token_factory: false, error: e instanceof Error ? e.message : "review failed" } };
   }
 }

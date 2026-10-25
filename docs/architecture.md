@@ -1,47 +1,44 @@
-# Northbridge Brief — Architecture
+# Northbridge Brief: architecture
 
-## Overview
+![Architecture](architecture.svg)
 
-Northbridge Brief is a Next.js application with serverless API routes that orchestrate an **investigation agent**. The agent combines:
+## Flow
 
-1. **Deterministic household tools** (fixtures under `data/`)
-2. **Quiet policy gate** (`lib/policy.ts`) — AUTO vs HUMAN_REQUIRED
-3. **Tavily web research** (`lib/tavily.ts`) — live or offline fixtures
-4. **NVIDIA Nemotron via Nebius Token Factory** (`lib/nemotron.ts`) — plan + briefs
-
-```
-┌─────────────────────────────────────────────────────────┐
-│  Control Plane Dashboard (app/page.tsx)                 │
-│  timeline · ledger · speakable briefs                   │
-└───────────────────────────┬─────────────────────────────┘
-                            │ fetch /api/*
-┌───────────────────────────▼─────────────────────────────┐
-│  API routes (Vercel serverless)                         │
-│  /investigate /status /brief /health /reset             │
-└───────────────────────────┬─────────────────────────────┘
-                            │
-┌───────────────────────────▼─────────────────────────────┐
-│  lib/agent.ts — investigation loop                      │
-│    1. planInvestigation()     → Nemotron Nano           │
-│    2. list / parse bills      → fixtures                │
-│    3. evaluateBill()          → policy gate             │
-│    4. researchWeb()           → Tavily / fixtures       │
-│    5. composeDecisionBrief()  → Nemotron Super          │
-│    6. auto-handle OR escalate → runtime state           │
-└─────────────────────────────────────────────────────────┘
+```mermaid
+flowchart LR
+  UI[Next.js dashboard] -->|POST /api/investigate| A[Agent loop]
+  A --> P[Plan: Nemotron 3 Nano]
+  A --> T[Tools: bills, funding, dues]
+  T --> G{Policy gate, rules only}
+  G -->|AUTO| Q[Handled silently, 0 tokens]
+  G -->|HUMAN_REQUIRED| R[Tavily search + extract]
+  R --> B[Brief: Nemotron 3 Super, n-citations]
+  B --> U{High stakes?}
+  U -->|yes| X[Review: Nemotron 3 Ultra]
+  U -->|no| H[Human brief]
+  X --> H
+  P & B & X --> C[Cost receipt: API usage x list price]
 ```
 
-## Offline vs live
+## Components
 
-| Capability | Offline (default) | Live |
-|------------|-------------------|------|
-| Policy gate | Full | Full |
-| Research | `data/offline_research.json` | Tavily API |
-| Plan + briefs | Deterministic Nemotron-shaped synthesis | Token Factory chat completions |
-| Dashboard UX | Full | Full |
+| File | Role |
+|------|------|
+| `lib/agent.ts` | Orchestrates one run; records model, tokens, latency per step; builds the receipt |
+| `lib/policy.ts` | Deterministic AUTO / HUMAN_REQUIRED rules: amount band, duplicate, sensitive category, funding floor |
+| `lib/tavily.ts` | `/search` (advanced, 5 results) then `/extract` on the top 3 with `query` reranking; labeled fixture fallback |
+| `lib/nemotron.ts` | Plan prompt, cited brief prompt (JSON), Ultra review prompt; offline templates |
+| `lib/llm.ts` | OpenAI-compatible Token Factory client; regional base URL with global fallback; usage capture |
+| `lib/pricing.ts` / `lib/receipt.ts` | List prices (2026-10-25) and receipt math; only measured calls count |
+| `app/api/benchmark` | Runs routed and all-Ultra pipelines in parallel for a measured comparison |
+| `app/api/health` | Mode and key presence; `?probe=1` live check |
 
-Live mode activates when `NEBIUS_API_KEY` is present. Failures fall back to offline briefs so the product never hard-crashes for judges.
+## Ultra review trigger
 
-## Pseudonyms
+`needsUltraReview` is true when a bill is HUMAN_REQUIRED and any of: two or more rules fired, the category is medical/tax/legal, or the amount is at least $500. In the fixtures that is the dental bill.
 
-Household members are **Avery Quinn** and **Morgan Quinn**. Product name is **Northbridge**. No real personal data is included.
+## Honesty rules in code
+
+- Offline steps are titled "OFFLINE fixture" / "template (no model call)".
+- Failed live calls fall back and show "[fallback]" plus the error.
+- Receipts with no API usage are `measured: false` and the UI shows no cost.

@@ -54,5 +54,7 @@ export function getStatus() {
     briefs: runtime.briefs,
     last_timeline: runtime.last_run?.timeline || [],
     last_results: runtime.last_run?.results || [],
+    last_receipt: runtime.last_run?.receipt || null,
+    last_duration_ms: runtime.last_run?.duration_ms || null,
   };
 }

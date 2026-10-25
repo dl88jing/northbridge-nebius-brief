@@ -6,7 +6,7 @@
       "id": "amount_out_of_band",
       "when": "amount outside expected_amount_range",
       "decision": "HUMAN_REQUIRED",
-      "reason": "Unexpected amount — confirm before funding",
+      "reason": "Unexpected amount \u2014 confirm before funding",
       "research": true
     },
     {
@@ -38,10 +38,22 @@
       "research": false
     }
   ],
-  "auto_eligible_categories": ["utilities", "insurance", "rent", "internet", "subscription"],
+  "auto_eligible_categories": [
+    "utilities",
+    "insurance",
+    "rent",
+    "internet",
+    "subscription"
+  ],
   "nemotron": {
     "fast_model": "nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B",
     "reason_model": "nvidia/nemotron-3-super-120b-a12b",
-    "base_url": "https://api.tokenfactory.nebius.com/v1/"
+    "ultra_model": "nvidia/Nemotron-3-Ultra-550b-a55b",
+    "base_url": "https://api.tokenfactory.us-central1.nebius.com/v1/",
+    "alt_base_url": "https://api.tokenfactory.nebius.com/v1/"
+  },
+  "ultra_review": {
+    "when": "2+ policy rules fire, or category is medical/tax/legal, or amount >= 500",
+    "model": "ultra"
   }
 }

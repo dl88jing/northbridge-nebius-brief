@@ -37,12 +37,54 @@ export type ResearchHit = {
   title: string;
   url: string;
   snippet: string;
+  /** Passage pulled by Tavily /extract (query-reranked chunks), when available. */
+  extract?: string;
+  score?: number;
 };
 
 export type ResearchBundle = {
   query: string;
   source: "tavily" | "offline_fixture" | "none";
   results: ResearchHit[];
+  /** Tavily credits reported by the API (include_usage); undefined offline. */
+  credits?: number;
+  search_ms?: number;
+  extract_ms?: number;
+  extracted_count?: number;
+  error?: string;
+};
+
+export type LlmUsage = {
+  model: string;
+  prompt_tokens: number;
+  completion_tokens: number;
+  latency_ms: number;
+  cost_usd?: number;
+  /** true only when the API returned a usage block. */
+  measured: boolean;
+};
+
+export type UltraReview = {
+  verdict: "confirm" | "revise";
+  unsupported_claims: string[];
+  final_recommendation: string;
+  reason: string;
+  model: string;
+};
+
+export type CostReceipt = {
+  measured: boolean;
+  calls: number;
+  prompt_tokens: number;
+  completion_tokens: number;
+  routed_cost_usd: number;
+  /** Same measured tokens priced at the Ultra list rate (not a separate run). */
+  all_ultra_repriced_usd: number;
+  savings_pct: number;
+  tavily_credits: number;
+  per_model: { model: string; calls: number; prompt_tokens: number; completion_tokens: number; cost_usd: number }[];
+  prices_as_of: string;
+  price_source: string;
 };
 
 export type AgentStep = {
@@ -53,6 +95,8 @@ export type AgentStep = {
   detail?: string;
   data?: unknown;
   model?: string;
+  usage?: LlmUsage;
+  ms?: number;
 };
 
 export type InvestigationResult = {
@@ -78,12 +122,18 @@ export type DecisionBrief = {
   speakable: string;
   model_used: string;
   mode: "live" | "offline";
+  /** Numbered sources the brief cites as [1], [2] ... */
+  citations?: { n: number; title: string; url: string }[];
+  ultra_review?: UltraReview;
 };
 
 export type InvestigateResponse = {
   ok: true;
-  mode: "live" | "offline";
-  models: { fast: string; reason: string };
+  mode: "live" | "partial" | "offline";
+  models: { fast: string; reason: string; ultra: string };
+  receipt: CostReceipt;
+  started_at: string;
+  duration_ms: number;
   token_factory: boolean;
   tavily: boolean;
   household: string;

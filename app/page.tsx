@@ -1,35 +1,27 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-type Status = {
-  token_factory?: boolean;
-  tavily?: boolean;
-  models?: { fast?: string; reason?: string };
-  household?: { name?: string };
-  bills?: BillRow[];
-  briefs?: Record<string, Brief>;
-  last_timeline?: TimelineStep[];
-  last_results?: unknown[];
-  runtime?: { last_summary?: Summary };
-  mode?: string;
+type Usage = { model: string; prompt_tokens: number; completion_tokens: number; latency_ms: number; cost_usd?: number; measured: boolean };
+type Receipt = {
+  measured: boolean;
+  calls: number;
+  prompt_tokens: number;
+  completion_tokens: number;
+  routed_cost_usd: number;
+  all_ultra_repriced_usd: number;
+  savings_pct: number;
+  tavily_credits: number;
+  per_model: { model: string; calls: number; prompt_tokens: number; completion_tokens: number; cost_usd: number }[];
+  prices_as_of: string;
+  price_source: string;
 };
-
-type Investigate = {
-  ok?: boolean;
-  mode?: string;
-  summary?: Summary;
-  results?: { bill_id: string; brief?: Brief }[];
-  timeline?: TimelineStep[];
-  token_factory?: boolean;
-  tavily?: boolean;
-  models?: { fast?: string; reason?: string };
-  household?: string;
-};
-
 type Summary = { auto?: number; escalated?: number; investigated?: number };
-type TimelineStep = { id: string; kind: string; title: string; detail?: string; model?: string };
+type TimelineStep = { id: string; kind: string; title: string; detail?: string; model?: string; usage?: Usage; ms?: number };
+type Citation = { n: number; title: string; url: string };
+type UltraReview = { verdict: string; unsupported_claims: string[]; final_recommendation: string; reason: string; model: string };
 type Brief = {
+  bill_id: string;
   headline: string;
   situation: string;
   why_it_matters: string;
@@ -39,54 +31,48 @@ type Brief = {
   speakable: string;
   model_used: string;
   mode: string;
+  citations?: Citation[];
+  ultra_review?: UltraReview;
 };
-type BillRow = {
-  id: string;
-  payee: string;
-  amount: number;
-  due_date: string;
-  category: string;
-  decision: string;
-  handled?: boolean;
-  needs_decision?: boolean;
+type BillRow = { id: string; payee: string; amount: number; due_date: string; category: string; decision: string; handled?: boolean; needs_decision?: boolean };
+type Status = {
+  mode?: "live" | "partial" | "offline";
+  token_factory?: boolean;
+  tavily?: boolean;
+  models?: { fast?: string; reason?: string; ultra?: string };
+  household?: { name?: string };
+  bills?: BillRow[];
+  briefs?: Record<string, Brief>;
+  last_timeline?: TimelineStep[];
+  last_receipt?: Receipt | null;
+  last_duration_ms?: number | null;
+  runtime?: { last_summary?: Summary };
 };
+type Investigate = { mode?: string; summary?: Summary; timeline?: TimelineStep[]; receipt?: Receipt; duration_ms?: number; results?: { bill_id: string; brief?: Brief; reasons?: string[] }[] };
+type Bench = { ok: boolean; error?: string; routed?: { cost_usd: number; tokens: number; duration_ms: number }; all_ultra?: { cost_usd: number; tokens: number; duration_ms: number }; savings_pct?: number | null; measured_at?: string };
 
-const SUGGESTIONS = [
-  "Run full quiet investigation",
-  "Why is StreamFlix escalating?",
-  "Is the second PG&E a duplicate?",
-  "Brief me on Bayview Dental",
-  "What can auto-handle tonight?",
-];
+const SUGGESTIONS = ["Run full quiet investigation", "Is the second PG&E a duplicate?", "Brief me on the dental bill", "What can auto-handle tonight?"];
+
+const usd = (n?: number) => (n === undefined || n === null ? "n/a" : n === 0 ? "$0" : n < 0.01 ? `$${n.toFixed(5)}` : `$${n.toFixed(4)}`);
+const short = (m?: string) => (m ? m.split("/").pop() : "");
 
 export default function Home() {
   const [status, setStatus] = useState<Status | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [investigate, setInvestigate] = useState<Investigate | null>(null);
-  const [selectedBrief, setSelectedBrief] = useState<string | null>(null);
+  const [inv, setInv] = useState<Investigate | null>(null);
+  const [selected, setSelected] = useState<string | null>(null);
   const [goal, setGoal] = useState(SUGGESTIONS[0]);
+  const [bench, setBench] = useState<Bench | null>(null);
+  const [benchBusy, setBenchBusy] = useState(false);
+  const briefRef = useRef<HTMLDivElement>(null);
 
   const refresh = useCallback(async () => {
     try {
       const res = await fetch("/api/status", { cache: "no-store" });
       if (!res.ok) throw new Error(`status ${res.status}`);
-      const data = await res.json();
-      setStatus(data);
+      setStatus(await res.json());
       setError(null);
-      if (data.last_results?.length) {
-        setInvestigate({
-          ok: true,
-          mode: data.mode,
-          summary: data.runtime?.last_summary,
-          results: data.last_results,
-          timeline: data.last_timeline,
-          token_factory: data.token_factory,
-          tavily: data.tavily,
-          models: data.models,
-          household: data.household?.name,
-        });
-      }
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Failed to load status");
     }
@@ -106,13 +92,16 @@ export default function Home() {
         body: JSON.stringify({ goal: customGoal || goal, reset: true }),
       });
       const data = await res.json();
-      if (!res.ok || data.ok === false) {
-        throw new Error(data.error || "Investigation failed");
-      }
-      setInvestigate(data);
-      const firstEsc = data.results?.find((r: { brief?: Brief; bill_id: string }) => r.brief);
-      if (firstEsc) setSelectedBrief(firstEsc.bill_id);
+      if (!res.ok || data.ok === false) throw new Error(data.error || "Investigation failed");
+      setInv(data);
+      type R = { bill_id: string; brief?: Brief; reasons?: string[] };
+      const withBriefs: R[] = (data.results || []).filter((r: R) => r.brief);
+      const pickBrief =
+        withBriefs.find((r) => r.brief?.ultra_review) ||
+        [...withBriefs].sort((a, b) => (b.reasons?.length || 0) - (a.reasons?.length || 0))[0];
+      if (pickBrief) setSelected(pickBrief.bill_id);
       await refresh();
+      setTimeout(() => briefRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 150);
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Investigation failed");
     } finally {
@@ -120,143 +109,126 @@ export default function Home() {
     }
   };
 
+  const runBench = async () => {
+    setBenchBusy(true);
+    try {
+      const res = await fetch("/api/benchmark", { method: "POST" });
+      setBench(await res.json());
+    } catch (e: unknown) {
+      setBench({ ok: false, error: e instanceof Error ? e.message : "benchmark failed" });
+    } finally {
+      setBenchBusy(false);
+    }
+  };
+
   const reset = async () => {
     setBusy(true);
     try {
       await fetch("/api/reset", { method: "POST" });
-      setInvestigate(null);
-      setSelectedBrief(null);
+      setInv(null);
+      setSelected(null);
+      setBench(null);
       await refresh();
     } finally {
       setBusy(false);
     }
   };
 
+  const mode = status?.mode || "offline";
   const briefs = status?.briefs || {};
-  const activeBrief = selectedBrief ? briefs[selectedBrief] : null;
+  const active = selected ? briefs[selected] : null;
   const bills = status?.bills || [];
-  const timeline = investigate?.timeline || status?.last_timeline || [];
-
-  const summary = useMemo(() => {
-    return (
-      investigate?.summary ||
-      status?.runtime?.last_summary || { auto: 0, escalated: 0, investigated: 0 }
-    );
-  }, [investigate, status]);
+  const timeline = inv?.timeline || status?.last_timeline || [];
+  const receipt = inv?.receipt || status?.last_receipt || null;
+  const duration = inv?.duration_ms ?? status?.last_duration_ms ?? null;
+  const summary = useMemo(() => inv?.summary || status?.runtime?.last_summary || { auto: 0, escalated: 0, investigated: 0 }, [inv, status]);
 
   return (
-    <main className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
-      <header className="mb-8 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+    <main className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
+      {status && <ModeBanner mode={mode} tf={!!status.token_factory} tv={!!status.tavily} />}
+
+      <header className="mb-6 mt-4 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         <div>
-          <p className="text-sm font-semibold tracking-[0.18em] uppercase text-[var(--sage)]">
-            Nebius × NVIDIA · Best Apps and Agents
-          </p>
-          <h1 className="display mt-2 text-4xl sm:text-5xl font-semibold tracking-tight text-[var(--ink)]">
-            Northbridge Brief
-          </h1>
+          <p className="text-sm font-semibold tracking-[0.18em] uppercase text-[var(--sage)]">Nebius × NVIDIA · Best Apps and Agents</p>
+          <h1 className="display mt-2 text-4xl sm:text-5xl font-semibold tracking-tight text-[var(--ink)]">Northbridge Brief</h1>
           <p className="mt-3 max-w-2xl text-[var(--muted)] text-lg leading-relaxed">
-            Quiet research/ops agent for Avery & Morgan Quinn. Nemotron on Nebius
-            Token Factory investigates household anomalies, gates with policy,
-            researches the web, and only pings humans when a decision is real.
+            A quiet household agent for Avery &amp; Morgan. Routine bills get handled silently. Real decisions get one short brief with
+            cited web sources, and you can see which Nemotron model did each step and what it cost.
           </p>
         </div>
-        <div className="flex flex-wrap gap-2">
-          <span className={`pill ${status?.token_factory ? "pill-ok" : "pill-info"}`}>
-            {status?.token_factory ? "Token Factory live" : "Offline demo mode"}
-          </span>
-          <span className={`pill ${status?.tavily ? "pill-ok" : "pill-info"}`}>
-            {status?.tavily ? "Tavily live" : "Tavily fixtures"}
-          </span>
-          <span className="pill pill-info mono">
-            {status?.models?.reason?.split("/").pop() || "Nemotron"}
-          </span>
+        <div className="flex flex-wrap gap-2" aria-label="Runtime status">
+          <span className={`pill ${status?.token_factory ? "pill-ok" : "pill-warn"}`}>{status?.token_factory ? "Token Factory: live" : "Token Factory: off"}</span>
+          <span className={`pill ${status?.tavily ? "pill-ok" : "pill-warn"}`}>{status?.tavily ? "Tavily: live" : "Tavily: off (fixtures)"}</span>
         </div>
       </header>
 
       {error && (
-        <div className="mb-6 rounded-xl border border-[color-mix(in_oklab,var(--warn)_35%,var(--line))] bg-[color-mix(in_oklab,var(--warn)_8%,white)] px-4 py-3 text-[var(--warn)]">
+        <div role="alert" className="mb-6 rounded-xl border border-[var(--warn)] bg-[#fbeeea] px-4 py-3 text-[var(--warn)]">
           {error}
         </div>
       )}
 
-      <section className="grid gap-6 lg:grid-cols-[1.15fr_0.85fr]">
-        <div className="space-y-6">
-          <div className="card p-5 sm:p-6">
-            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-              <div>
-                <h2 className="display text-2xl">Investigation desk</h2>
-                <p className="text-[var(--muted)] mt-1">
-                  Multi-step agent: plan → bills → policy → research → Nemotron brief → escalate/auto.
-                </p>
-              </div>
-              <div className="flex gap-2">
-                <button className="btn btn-ghost" onClick={reset} disabled={busy}>
-                  Reset
-                </button>
-                <button className="btn btn-primary" onClick={() => run()} disabled={busy}>
-                  {busy ? "Investigating…" : "Run quiet pass"}
-                </button>
-              </div>
-            </div>
+      {/* Onboarding: 30-second path */}
+      <section className="card mb-6 p-5 sm:p-6" aria-labelledby="start-here">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+          <div>
+            <h2 id="start-here" className="display text-2xl">Start here (about 30 seconds)</h2>
+            <ol className="mt-2 grid gap-1 text-[var(--muted)] sm:grid-cols-3 sm:gap-4">
+              <li><strong className="text-[var(--ink)]">1.</strong> Press <em>Run the demo</em>. Six household bills are checked.</li>
+              <li><strong className="text-[var(--ink)]">2.</strong> Rules handle routine bills with zero model tokens.</li>
+              <li><strong className="text-[var(--ink)]">3.</strong> Read the escalated brief: sources, model per step, cost.</li>
+            </ol>
+          </div>
+          <div className="flex gap-2">
+            <button className="btn btn-ghost whitespace-nowrap" onClick={reset} disabled={busy}>Reset</button>
+            <button className="btn btn-primary text-lg px-6 whitespace-nowrap" onClick={() => run(SUGGESTIONS[0])} disabled={busy} aria-busy={busy}>
+              {busy ? (mode === "offline" ? "Running…" : "Calling Nemotron + Tavily…") : "Run the demo"}
+            </button>
+          </div>
+        </div>
+        <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4" aria-live="polite">
+          <Stat label="Bills checked" value={String(summary.investigated || 0)} />
+          <Stat label="Auto-handled" value={String(summary.auto || 0)} tone="ok" />
+          <Stat label="Escalated" value={String(summary.escalated || 0)} tone="warn" />
+          <Stat label="Run cost" value={receipt?.measured ? usd(receipt.routed_cost_usd) : mode === "offline" ? "offline" : "–"} sub={duration ? `${(duration / 1000).toFixed(1)}s` : undefined} />
+        </div>
+      </section>
 
-            <div className="mt-5 flex flex-col gap-3">
-              <label className="text-sm font-semibold text-[var(--muted)]">Goal</label>
-              <div className="flex flex-col gap-3 sm:flex-row">
-                <input
-                  className="flex-1 rounded-xl border border-[var(--line)] bg-white/70 px-4 py-3 outline-none focus:border-[var(--sage)]"
-                  value={goal}
-                  onChange={(e) => setGoal(e.target.value)}
-                  onKeyDown={(e) => e.key === "Enter" && run()}
-                />
-                <button className="btn btn-primary" onClick={() => run()} disabled={busy}>
-                  Investigate
-                </button>
-              </div>
-              <div className="flex flex-wrap gap-2">
-                {SUGGESTIONS.map((s) => (
-                  <button
-                    key={s}
-                    className="pill hover:border-[var(--sage)]"
-                    onClick={() => {
-                      setGoal(s);
-                      run(s);
-                    }}
-                    disabled={busy}
-                  >
-                    {s}
+      <section className="grid gap-6 lg:grid-cols-[1.1fr_0.9fr]">
+        <div className="space-y-6">
+          <div ref={briefRef} className="card p-5 sm:p-6" aria-labelledby="brief-h">
+            <h2 id="brief-h" className="display text-2xl">Decision brief</h2>
+            {!active && <p className="mt-3 text-[var(--muted)]">Run the demo. The highest-stakes escalation opens here with its sources.</p>}
+            {active && <BriefCard b={active} />}
+            {Object.keys(briefs).length > 1 && (
+              <div className="mt-4 flex flex-wrap gap-2" role="tablist" aria-label="Other briefs">
+                {Object.values(briefs).map((b) => (
+                  <button key={b.bill_id} role="tab" aria-selected={b.bill_id === selected} className={`pill ${b.bill_id === selected ? "pill-ok" : ""}`} onClick={() => setSelected(b.bill_id)}>
+                    {bills.find((x) => x.id === b.bill_id)?.payee || b.bill_id}
                   </button>
                 ))}
               </div>
-            </div>
-
-            <div className="mt-6 grid grid-cols-3 gap-3">
-              <Stat label="Investigated" value={summary.investigated || 0} />
-              <Stat label="Auto-handled" value={summary.auto || 0} tone="ok" />
-              <Stat label="Escalated" value={summary.escalated || 0} tone="warn" />
-            </div>
+            )}
           </div>
 
           <div className="card p-5 sm:p-6">
-            <h2 className="display text-2xl">Agent timeline</h2>
-            <p className="text-[var(--muted)] mt-1 mb-4">
-              Tool calls, quiet policy gate, Tavily research, and Nemotron briefs — not a chat wrapper.
-            </p>
-            <div className="max-h-[520px] space-y-3 overflow-auto pr-2">
-              {timeline.length === 0 && (
-                <p className="text-[var(--muted)]">
-                  Run a quiet pass to watch the agent investigate Northbridge anomalies.
-                </p>
-              )}
-              {timeline.map((s: TimelineStep) => (
-                <div key={s.id} className="timeline-item rounded-xl bg-white/50 px-3 py-2.5 border border-[var(--line)]/70">
+            <h2 className="display text-2xl">Agent trace</h2>
+            <p className="text-[var(--muted)] mt-1 mb-4">Every step, the model or tool that ran it, tokens, latency and cost.</p>
+            <div className="max-h-[560px] space-y-2 overflow-auto pr-2">
+              {timeline.length === 0 && <p className="text-[var(--muted)]">No run yet.</p>}
+              {timeline.map((s) => (
+                <div key={s.id} className="rounded-xl bg-white/50 px-3 py-2.5 border border-[var(--line)]/70">
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="pill">{s.kind}</span>
                     <strong>{s.title}</strong>
-                    {s.model && <span className="mono text-[var(--muted)]">{s.model}</span>}
                   </div>
-                  {s.detail && (
-                    <p className="mt-1 text-sm text-[var(--muted)] whitespace-pre-wrap">{s.detail}</p>
-                  )}
+                  <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-xs mono text-[var(--muted)]">
+                    {s.model && <span>{short(s.model)}</span>}
+                    {s.usage && <span>{s.usage.prompt_tokens}→{s.usage.completion_tokens} tok</span>}
+                    {s.usage?.cost_usd !== undefined && <span>{usd(s.usage.cost_usd)}</span>}
+                    {s.ms !== undefined && <span>{s.ms} ms</span>}
+                  </div>
+                  {s.detail && <p className="mt-1 text-sm text-[var(--muted)] whitespace-pre-wrap">{s.detail}</p>}
                 </div>
               ))}
             </div>
@@ -264,28 +236,55 @@ export default function Home() {
         </div>
 
         <div className="space-y-6">
+          <div className="card p-5 sm:p-6" aria-labelledby="receipt-h">
+            <h2 id="receipt-h" className="display text-2xl">Cost receipt</h2>
+            {!receipt?.measured ? (
+              <p className="mt-3 text-[var(--muted)]">
+                {mode === "offline" || !status?.token_factory
+                  ? "Offline demo: no Token Factory calls, so there are no token counts. Numbers appear here only when they come from the API."
+                  : "Run the demo to get a receipt built from API-reported token usage."}
+              </p>
+            ) : (
+              <div className="mt-3 space-y-3 text-sm">
+                <table className="w-full text-left">
+                  <caption className="sr-only">Per-model token usage</caption>
+                  <thead className="text-[var(--muted)]"><tr><th>Model</th><th>Calls</th><th>Tokens in→out</th><th>Cost</th></tr></thead>
+                  <tbody className="mono">
+                    {receipt.per_model.map((r) => (
+                      <tr key={r.model}><td>{short(r.model)}</td><td>{r.calls}</td><td>{r.prompt_tokens}→{r.completion_tokens}</td><td>{usd(r.cost_usd)}</td></tr>
+                    ))}
+                  </tbody>
+                </table>
+                <div className="rounded-xl border border-[var(--line)] bg-[#f7faf6] p-3">
+                  <div><strong>Routed (Nano → Super → Ultra on high stakes):</strong> {usd(receipt.routed_cost_usd)}</div>
+                  <div><strong>Same tokens, all on Ultra:</strong> {usd(receipt.all_ultra_repriced_usd)} <span className="text-[var(--muted)]">({receipt.savings_pct}% saved)</span></div>
+                  <div className="mt-1 text-xs text-[var(--muted)]">Re-priced at list rates, not a second run. Tavily credits this run: {receipt.tavily_credits}. Prices from <a className="underline" href={receipt.price_source}>Token Factory</a>, {receipt.prices_as_of}.</div>
+                </div>
+                <div>
+                  <button className="btn btn-ghost" onClick={runBench} disabled={benchBusy}>{benchBusy ? "Running both…" : "Measure vs an all-Ultra run"}</button>
+                  {bench && !bench.ok && <p className="mt-2 text-[var(--warn)]">{bench.error}</p>}
+                  {bench?.ok && (
+                    <p className="mt-2">
+                      Measured side by side: routed {usd(bench.routed?.cost_usd)} ({bench.routed?.tokens} tok, {((bench.routed?.duration_ms || 0) / 1000).toFixed(1)}s) vs all-Ultra {usd(bench.all_ultra?.cost_usd)} ({bench.all_ultra?.tokens} tok, {((bench.all_ultra?.duration_ms || 0) / 1000).toFixed(1)}s). <strong>{bench.savings_pct}% cheaper.</strong>
+                    </p>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+
           <div className="card p-5 sm:p-6">
             <h2 className="display text-2xl">Household ledger</h2>
-            <p className="text-[var(--muted)] mt-1 mb-4">
-              {status?.household?.name || "Northbridge"} · Avery & Morgan Quinn · escalate-only
-            </p>
+            <p className="text-[var(--muted)] mt-1 mb-4">{status?.household?.name || "Northbridge"} · pseudonymous demo data</p>
             <div className="space-y-2">
-              {bills.map((b: BillRow) => (
-                <button
-                  key={b.id}
-                  onClick={() => setSelectedBrief(b.id)}
-                  className="w-full text-left rounded-xl border border-[var(--line)] bg-white/60 px-3 py-3 hover:border-[var(--sage)] transition"
-                >
+              {bills.map((b) => (
+                <button key={b.id} onClick={() => briefs[b.id] && setSelected(b.id)} className="w-full text-left rounded-xl border border-[var(--line)] bg-white/60 px-3 py-3 hover:border-[var(--sage)] transition">
                   <div className="flex items-start justify-between gap-3">
                     <div>
                       <div className="font-semibold">{b.payee}</div>
-                      <div className="text-sm text-[var(--muted)]">
-                        ${Number(b.amount).toFixed(2)} · due {b.due_date} · {b.category}
-                      </div>
+                      <div className="text-sm text-[var(--muted)]">${Number(b.amount).toFixed(2)} · due {b.due_date} · {b.category}</div>
                     </div>
-                    <span className={`pill ${b.decision === "AUTO" ? "pill-ok" : "pill-warn"}`}>
-                      {b.handled ? "handled" : b.needs_decision ? "brief ready" : b.decision}
-                    </span>
+                    <span className={`pill ${b.decision === "AUTO" ? "pill-ok" : "pill-warn"}`}>{b.handled ? "auto-handled" : b.needs_decision ? "brief ready" : b.decision === "AUTO" ? "routine" : "needs you"}</span>
                   </div>
                 </button>
               ))}
@@ -293,102 +292,102 @@ export default function Home() {
           </div>
 
           <div className="card p-5 sm:p-6">
-            <h2 className="display text-2xl">Decision brief</h2>
-            {!activeBrief && (
-              <p className="mt-3 text-[var(--muted)]">
-                Escalations land here with speakable guidance and research citations.
-              </p>
-            )}
-            {activeBrief && (
-              <article className="mt-4 space-y-3">
-                <div className="flex flex-wrap gap-2">
-                  <span className="pill pill-warn">HUMAN_REQUIRED</span>
-                  <span className="pill mono">{activeBrief.mode}</span>
-                  <span className="pill mono">{activeBrief.model_used}</span>
-                </div>
-                <h3 className="display text-xl">{activeBrief.headline}</h3>
-                <p>{activeBrief.situation}</p>
-                <p className="text-[var(--muted)]">
-                  <strong className="text-[var(--ink)]">Why it matters:</strong>{" "}
-                  {activeBrief.why_it_matters}
-                </p>
-                <p>
-                  <strong>Recommended:</strong> {activeBrief.recommended_action}
-                </p>
-                {activeBrief.research_summary && (
-                  <div className="rounded-xl border border-[var(--line)] bg-[#f7faf6] p-3 text-sm">
-                    <strong>Research:</strong> {activeBrief.research_summary}
-                  </div>
-                )}
-                <div className="rounded-xl bg-[var(--sage-deep)] text-[#f3f7f3] p-4">
-                  <div className="text-xs uppercase tracking-[0.16em] opacity-80 mb-1">
-                    Speakable
-                  </div>
-                  {activeBrief.speakable}
-                </div>
-                <ul className="list-disc pl-5 text-sm text-[var(--muted)]">
-                  {(activeBrief.questions_for_humans || []).map((q: string) => (
-                    <li key={q}>{q}</li>
-                  ))}
-                </ul>
-              </article>
-            )}
-            {!activeBrief && Object.keys(briefs).length > 0 && (
-              <div className="mt-3 flex flex-wrap gap-2">
-                {Object.keys(briefs).map((id) => (
-                  <button key={id} className="pill" onClick={() => setSelectedBrief(id)}>
-                    Open {id}
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-
-          <div className="card p-5 sm:p-6">
-            <h2 className="display text-xl">Stack</h2>
+            <h2 className="display text-xl">Which model does what</h2>
             <ul className="mt-3 space-y-2 text-sm text-[var(--muted)]">
-              <li>
-                <strong className="text-[var(--ink)]">Models:</strong>{" "}
-                {status?.models?.fast} (plan) · {status?.models?.reason} (briefs)
-              </li>
-              <li>
-                <strong className="text-[var(--ink)]">Inference:</strong> Nebius Token Factory
-                OpenAI-compatible API
-              </li>
-              <li>
-                <strong className="text-[var(--ink)]">Research:</strong> Tavily (+ offline fixtures)
-              </li>
-              <li>
-                <strong className="text-[var(--ink)]">Policy:</strong> escalate-only quiet gate
-              </li>
+              <li><strong className="text-[var(--ink)]">Policy gate:</strong> deterministic rules, no LLM, no tokens.</li>
+              <li><strong className="text-[var(--ink)]">Plan:</strong> {short(status?.models?.fast)} (cheapest, fast).</li>
+              <li><strong className="text-[var(--ink)]">Research:</strong> Tavily search (advanced) + extract on top sources.</li>
+              <li><strong className="text-[var(--ink)]">Brief:</strong> {short(status?.models?.reason)} writes it with [n] citations.</li>
+              <li><strong className="text-[var(--ink)]">Escalation review:</strong> {short(status?.models?.ultra)} checks high-stakes briefs against sources.</li>
             </ul>
+            <details className="mt-3 text-sm">
+              <summary className="cursor-pointer text-[var(--sage)]">Ask a custom goal</summary>
+              <div className="mt-2 flex flex-col gap-2">
+                <label htmlFor="goal" className="sr-only">Goal</label>
+                <input id="goal" className="rounded-xl border border-[var(--line)] bg-white/70 px-3 py-2" value={goal} onChange={(e) => setGoal(e.target.value)} onKeyDown={(e) => e.key === "Enter" && run()} />
+                <div className="flex flex-wrap gap-2">
+                  {SUGGESTIONS.map((s) => (
+                    <button key={s} className="pill" onClick={() => { setGoal(s); run(s); }} disabled={busy}>{s}</button>
+                  ))}
+                </div>
+              </div>
+            </details>
           </div>
         </div>
       </section>
 
       <footer className="mt-10 border-t border-[var(--line)] pt-6 text-sm text-[var(--muted)]">
-        Northbridge Brief · Apache-2.0 · Pseudonymous household demo for the Nebius x NVIDIA Global AI Hackathon.
-        Never stores real PII.
+        Northbridge Brief · Apache-2.0 · <a className="underline" href="https://github.com/dl88jing/northbridge-nebius-brief">Source</a> · Pseudonymous demo household (Avery &amp; Morgan). No real financial data.
       </footer>
     </main>
   );
 }
 
-function Stat({
-  label,
-  value,
-  tone,
-}: {
-  label: string;
-  value: number;
-  tone?: "ok" | "warn";
-}) {
-  const color =
-    tone === "ok" ? "text-[var(--ok)]" : tone === "warn" ? "text-[var(--warn)]" : "text-[var(--ink)]";
+function ModeBanner({ mode, tf, tv }: { mode: string; tf: boolean; tv: boolean }) {
+  if (mode === "live") {
+    return (
+      <div role="status" className="rounded-xl border border-[var(--ok)] bg-[#e9f3ec] px-4 py-2 text-sm text-[var(--ok)]">
+        <strong>LIVE.</strong> Each run calls NVIDIA Nemotron on Nebius Token Factory and Tavily search + extract. Token counts and costs come from the APIs.
+      </div>
+    );
+  }
+  return (
+    <div role="status" className="rounded-xl border-2 border-[var(--copper)] bg-[#fbf0e4] px-4 py-3 text-sm text-[#7a3f17]">
+      <strong>{mode === "partial" ? "PARTIALLY LIVE" : "OFFLINE DEMO"}.</strong>{" "}
+      {tf ? "Token Factory is live. " : "No Token Factory calls: plans and briefs come from templates. "}
+      {tv ? "Tavily is live." : "No Tavily calls: sources are labeled fixtures (example.com links)."} The rules engine, UI and trace are real; model output and costs are not.
+    </div>
+  );
+}
+
+function BriefCard({ b }: { b: Brief }) {
+  const live = b.mode === "live";
+  return (
+    <article className="mt-4 space-y-3">
+      <div className="flex flex-wrap gap-2">
+        <span className="pill pill-warn">Needs you</span>
+        <span className={`pill ${live ? "pill-ok" : "pill-warn"}`}>{live ? "live model output" : "offline template"}</span>
+        <span className="pill mono">{short(b.model_used)}</span>
+      </div>
+      <h3 className="display text-xl">{b.headline}</h3>
+      <div className="rounded-xl bg-[var(--sage-deep)] text-[#f3f7f3] p-4">
+        <div className="text-xs uppercase tracking-[0.16em] opacity-80 mb-1">What to do</div>
+        {b.ultra_review?.final_recommendation || b.recommended_action}
+      </div>
+      <p>{b.situation}</p>
+      <p className="text-[var(--muted)]"><strong className="text-[var(--ink)]">Why it matters:</strong> {b.why_it_matters}</p>
+      {b.research_summary && <p className="text-sm"><strong>Research:</strong> {b.research_summary}</p>}
+      {b.citations && b.citations.length > 0 && (
+        <div className="rounded-xl border border-[var(--line)] bg-[#f7faf6] p-3 text-sm">
+          <strong>Sources {live ? "(Tavily)" : "(offline fixtures)"}</strong>
+          <ol className="mt-1 space-y-1">
+            {b.citations.map((c) => (
+              <li key={c.n}>[{c.n}] <a className="underline break-all" href={c.url} target="_blank" rel="noreferrer">{c.title}</a></li>
+            ))}
+          </ol>
+        </div>
+      )}
+      {b.ultra_review && (
+        <div className="rounded-xl border border-[var(--sky)] bg-[#eef3f6] p-3 text-sm">
+          <strong>Escalation review by {short(b.ultra_review.model)}: {b.ultra_review.verdict}</strong>
+          <p className="mt-1">{b.ultra_review.reason}</p>
+          {b.ultra_review.unsupported_claims.length > 0 && (
+            <ul className="mt-1 list-disc pl-5">{b.ultra_review.unsupported_claims.map((c) => <li key={c}>Unsupported: {c}</li>)}</ul>
+          )}
+        </div>
+      )}
+      <p className="text-sm italic text-[var(--muted)]">Spoken version: “{b.speakable}”</p>
+    </article>
+  );
+}
+
+function Stat({ label, value, tone, sub }: { label: string; value: string; tone?: "ok" | "warn"; sub?: string }) {
+  const color = tone === "ok" ? "text-[var(--ok)]" : tone === "warn" ? "text-[var(--warn)]" : "text-[var(--ink)]";
   return (
     <div className="rounded-xl border border-[var(--line)] bg-white/60 px-3 py-3">
       <div className="text-xs uppercase tracking-[0.14em] text-[var(--muted)]">{label}</div>
       <div className={`display text-3xl mt-1 ${color}`}>{value}</div>
+      {sub && <div className="text-xs text-[var(--muted)] mono">{sub}</div>}
     </div>
   );
 }

@@ -35,7 +35,7 @@ export function loadPolicy() {
     mode: string;
     rules: { id: string; decision: string; reason: string; research?: boolean }[];
     auto_eligible_categories: string[];
-    nemotron: { fast_model: string; reason_model: string; base_url: string };
+    nemotron: { fast_model: string; reason_model: string; ultra_model: string; base_url: string; alt_base_url: string };
   }>("policy.json");
 }
 
