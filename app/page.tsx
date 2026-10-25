@@ -48,7 +48,7 @@ type Status = {
   last_duration_ms?: number | null;
   runtime?: { last_summary?: Summary };
 };
-type Investigate = { mode?: string; summary?: Summary; timeline?: TimelineStep[]; receipt?: Receipt; duration_ms?: number; results?: { bill_id: string; brief?: Brief; reasons?: string[] }[] };
+type Investigate = { mode?: string; summary?: Summary; timeline?: TimelineStep[]; receipt?: Receipt; duration_ms?: number; results?: { bill_id: string; brief?: Brief; reasons?: string[]; action?: string }[] };
 type Bench = { ok: boolean; error?: string; routed?: { cost_usd: number; tokens: number; duration_ms: number }; all_ultra?: { cost_usd: number; tokens: number; duration_ms: number }; savings_pct?: number | null; measured_at?: string };
 
 const SUGGESTIONS = ["Run full quiet investigation", "Is the second PG&E a duplicate?", "Brief me on the dental bill", "What can auto-handle tonight?"];
@@ -135,9 +135,21 @@ export default function Home() {
   };
 
   const mode = status?.mode || "offline";
-  const briefs = status?.briefs || {};
+  // Prefer data from the run response itself: on serverless, /api/status may hit a different instance.
+  const briefs = useMemo(() => {
+    const fromRun: Record<string, Brief> = {};
+    for (const r of inv?.results || []) if (r.brief) fromRun[r.bill_id] = r.brief;
+    return Object.keys(fromRun).length ? fromRun : status?.briefs || {};
+  }, [inv, status]);
   const active = selected ? briefs[selected] : null;
-  const bills = status?.bills || [];
+  const bills = useMemo(() => {
+    const rows = status?.bills || [];
+    if (!inv?.results) return rows;
+    return rows.map((b) => {
+      const r = inv.results!.find((x) => x.bill_id === b.id);
+      return r ? { ...b, handled: r.action === "auto_handled", needs_decision: r.action === "escalated" } : b;
+    });
+  }, [inv, status]);
   const timeline = inv?.timeline || status?.last_timeline || [];
   const receipt = inv?.receipt || status?.last_receipt || null;
   const duration = inv?.duration_ms ?? status?.last_duration_ms ?? null;
