@@ -10,7 +10,7 @@ The demo household (Avery & Morgan) and all bills are fictional.
 
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 
-> **Current deployment status:** the live URL runs in **offline demo mode** until Token Factory and Tavily keys are added to the deployment. The UI shows a banner saying so. In offline mode, plans and briefs come from templates, sources are labeled fixtures, and no costs are shown. The live code path is implemented and tested with mocked APIs (see [Tests](#tests)). Check the mode yourself at [`/api/health`](https://northbridge-nebius-brief.vercel.app/api/health).
+> **Current deployment status (Oct 25, 2026):** the live URL runs **live** on Nebius Token Factory (Nemotron 3 Nano, Super, Ultra) and Tavily. Check it yourself at [`/api/health?probe=1`](https://northbridge-nebius-brief.vercel.app/api/health?probe=1). If a provider fails, times out or runs out of credits, that step uses a labeled fallback and the run still completes; the banner and trace say so.
 
 ---
 
@@ -48,9 +48,16 @@ To run live, copy `.env.example` to `.env.local` and set `NEBIUS_API_KEY` and `T
 | Decision brief | `nvidia/nemotron-3-super-120b-a12b` on Token Factory | JSON brief; every factual claim cites `[n]` from the sources. |
 | Escalation review | `nvidia/Nemotron-3-Ultra-550b-a55b` on Token Factory | Only for high-stakes escalations (medical/tax/legal, multiple rules, or ≥ $500). Confirms or revises the recommendation and lists unsupported claims. |
 
-**Cost receipt.** Every Token Factory call records the API-reported `prompt_tokens` and `completion_tokens`, multiplied by Token Factory list prices (public catalog, read 2026-10-25, in [`lib/pricing.ts`](lib/pricing.ts)). The UI shows cost per step and per model, plus what the same tokens would cost on Ultra. That second number is a repricing, not a second run, and is labeled that way. For a measured comparison, `POST /api/benchmark` runs the routed pipeline and an all-Ultra pipeline side by side and returns both real costs. Tavily credits come from the API's `usage` field.
+**Cost receipt.** Every Token Factory call records the API-reported `prompt_tokens` and `completion_tokens`, multiplied by Token Factory list prices (public catalog, read 2026-10-25, in [`lib/pricing.ts`](lib/pricing.ts)). The UI shows cost per step and per model, plus what the same tokens would cost on Ultra. That second number is a repricing, not a second run, and is labeled that way. For a measured comparison, `POST /api/benchmark` runs the routed pipeline and an all-Ultra pipeline side by side and returns both real costs (our recorded run: [`docs/live-measurements.json`](docs/live-measurements.json)). Tavily credits come from the API's `usage` field.
 
-No cost or savings figures are shown in offline mode, and none are claimed in this README, because the deployment has not run live yet.
+**Measured on the production deployment, Oct 25, 2026** (single runs, not averages):
+
+| | Routed (Nano → Super → Ultra on high stakes) | Every step on Ultra |
+|---|---|---|
+| `POST /api/benchmark`, same sources | **$0.00459**, 8,066 tokens, 6 calls | **$0.01327**, 8,651 tokens, 6 calls |
+| Saving | **65.4% cheaper** | |
+
+A normal full pass (6 bills: 2 auto-handled with zero tokens, 4 escalated) costs about **$0.0045**, takes about 8–11 s with fresh web research, and uses 9 Tavily credits. The in-app repricing of the same tokens on Ultra shows 59–61% savings. No cost figures are shown in offline mode.
 
 Models and endpoint can be overridden with `NEMOTRON_FAST_MODEL`, `NEMOTRON_REASON_MODEL`, `NEMOTRON_ULTRA_MODEL`, `NEBIUS_BASE_URL` (default `https://api.tokenfactory.us-central1.nebius.com/v1/`, falls back to `https://api.tokenfactory.nebius.com/v1/`).
 
@@ -62,7 +69,9 @@ Models and endpoint can be overridden with `NEMOTRON_FAST_MODEL`, `NEMOTRON_REAS
 |------|------|--------------|
 | `live` | Both keys set | Real Nemotron output, real Tavily sources, measured cost receipt. Green banner. |
 | `partial` | One key set | Live part is real, the other part is labeled offline. Amber banner. |
-| `offline` | No keys | Templates + fixture sources (example.com links), no costs. Amber "OFFLINE DEMO" banner. If a live call fails, the step is marked "[fallback]" with the error. |
+| `offline` | No keys | Templates + fixture sources (example.com links), no costs. Amber "OFFLINE DEMO" banner. |
+
+**Fallbacks (keys set, a provider fails).** Every live call has a deadline (the whole run is budgeted to about 48 s, under Vercel's 60 s limit). If Token Factory or Tavily errors, times out, rate-limits or runs out of credits, that step uses a labeled template or fixture, the trace says why, and the banner reads "LIVE, with a labeled fallback" instead of LIVE. If the request itself fails, the page retries with `{"offline": true}` and shows the labeled offline run, never an error. Nemotron 3 thinking is turned off per request (`chat_template_kwargs: {enable_thinking: false}`) to keep latency and tokens down; model JSON gets a lenient repair and one bounded retry. Tavily results are cached per instance for 6 hours, and bills asking the same question share one search.
 
 `GET /api/health` reports the mode and which keys are present (booleans only). `GET /api/health?probe=1` makes one tiny Token Factory call and one Tavily search and reports success and latency.
 
@@ -89,6 +98,8 @@ Models and endpoint can be overridden with `NEMOTRON_FAST_MODEL`, `NEMOTRON_REAS
 - pricing math and receipt (only measured calls count; Ultra repricing),
 - JSON extraction from model output with `<think>` blocks and code fences,
 - offline run: zero network calls, every research step labeled OFFLINE, no cost reported, every brief has sources,
+- provider failure (Token Factory throws, Tavily returns 432 credit limit): the run still completes, every brief is a labeled fallback with sources, `run_mode` is `degraded`, and the reason reads "out of credits",
+- `offline: true` with keys set: zero network calls,
 - live path with a fake Token Factory client and fake Tavily server: Nano plans, Super briefs, Ultra reviews the dental bill, citations point at Tavily URLs, receipt is measured, Tavily credits add up,
 - `/api/status` never contains key values.
 
@@ -98,7 +109,7 @@ Models and endpoint can be overridden with `NEMOTRON_FAST_MODEL`, `NEMOTRON_REAS
 
 ## Limitations
 
-- **Not live yet on the public URL.** Keys have not been added to the deployment, so the hosted demo is offline. Everything shown there is labeled.
+- **Single-run numbers.** The cost figures above are from individual runs, not averages.
 - **Fixture data.** Six fictional bills; no bank, email or biller integration. Nothing is ever paid.
 - **Rules are simple.** Expected-amount bands and duplicate detection are hand-set per bill.
 - **Prices are list prices** copied on 2026-10-25; Token Factory may change them. Unknown models show "n/a" instead of a guess.

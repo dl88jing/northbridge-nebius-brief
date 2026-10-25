@@ -1,0 +1,100 @@
+{
+ "note": "Measured on https://northbridge-nebius-brief.vercel.app (production), Oct 25 2026. Single runs. Cost = API-reported tokens x Token Factory list price (2026-10-25).",
+ "benchmark": {
+  "ok": true,
+  "measured_at": "2026-10-25T08:53:32.152Z",
+  "routed": {
+   "cost_usd": 0.00458634,
+   "tokens": 8066,
+   "calls": 6,
+   "duration_ms": 8006,
+   "per_model": [
+    {
+     "model": "nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B",
+     "calls": 1,
+     "prompt_tokens": 390,
+     "completion_tokens": 111,
+     "cost_usd": 5.004e-05
+    },
+    {
+     "model": "nvidia/nemotron-3-super-120b-a12b",
+     "calls": 4,
+     "prompt_tokens": 4603,
+     "completion_tokens": 1526,
+     "cost_usd": 0.0027543000000000003
+    },
+    {
+     "model": "nvidia/Nemotron-3-Ultra-550b-a55b",
+     "calls": 1,
+     "prompt_tokens": 1263,
+     "completion_tokens": 173,
+     "cost_usd": 0.001782
+    }
+   ]
+  },
+  "all_ultra": {
+   "cost_usd": 0.013273,
+   "tokens": 8651,
+   "calls": 6,
+   "duration_ms": 3815,
+   "per_model": [
+    {
+     "model": "nvidia/Nemotron-3-Ultra-550b-a55b",
+     "calls": 6,
+     "prompt_tokens": 6340,
+     "completion_tokens": 2311,
+     "cost_usd": 0.013273
+    }
+   ]
+  },
+  "savings_pct": 65.4,
+  "tavily_credits": 6,
+  "complete": true,
+  "fallbacks": {
+   "routed": [],
+   "all_ultra": []
+  },
+  "note": "Single paired run; costs = API-reported tokens x Token Factory list price. complete=false means a step fell back, so the comparison is not like-for-like."
+ },
+ "full_run": {
+  "measured_at": "2026-10-25T08:53:00.525Z",
+  "run_mode": "live",
+  "duration_ms": 10783,
+  "receipt": {
+   "measured": true,
+   "calls": 6,
+   "prompt_tokens": 6251,
+   "completion_tokens": 1796,
+   "routed_cost_usd": 0.00452056,
+   "all_ultra_repriced_usd": 0.011639000000000002,
+   "savings_pct": 61.2,
+   "tavily_credits": 9,
+   "per_model": [
+    {
+     "model": "nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B",
+     "calls": 1,
+     "prompt_tokens": 390,
+     "completion_tokens": 149,
+     "cost_usd": 5.9159999999999996e-05
+    },
+    {
+     "model": "nvidia/nemotron-3-super-120b-a12b",
+     "calls": 4,
+     "prompt_tokens": 4603,
+     "completion_tokens": 1485,
+     "cost_usd": 0.0027174
+    },
+    {
+     "model": "nvidia/Nemotron-3-Ultra-550b-a55b",
+     "calls": 1,
+     "prompt_tokens": 1258,
+     "completion_tokens": 162,
+     "cost_usd": 0.001744
+    }
+   ],
+   "prices_as_of": "2026-10-25",
+   "price_source": "https://tokenfactory.nebius.com/api/public/models_info"
+  },
+  "fallbacks": []
+ }
+}
