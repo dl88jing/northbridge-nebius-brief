@@ -9,6 +9,7 @@ The demo household (Avery & Morgan) and all bills are fictional.
 - **Architecture:** [docs/architecture.md](docs/architecture.md)
 
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
+[![CI](https://github.com/dl88jing/northbridge-nebius-brief/actions/workflows/ci.yml/badge.svg)](https://github.com/dl88jing/northbridge-nebius-brief/actions/workflows/ci.yml)
 
 > **Current deployment status (Oct 25, 2026):** the live URL runs **live** on Nebius Token Factory (Nemotron 3 Nano, Super, Ultra) and Tavily. Check it yourself at [`/api/health?probe=1`](https://northbridge-nebius-brief.vercel.app/api/health?probe=1). If a provider fails, times out or runs out of credits, that step uses a labeled fallback and the run still completes; the banner and trace say so.
 
@@ -92,9 +93,9 @@ Models and endpoint can be overridden with `NEMOTRON_FAST_MODEL`, `NEMOTRON_REAS
 
 ## Tests
 
-`npm test` (Node's test runner via `tsx`), no keys or network:
+`npm test` (Node's test runner via `tsx`), no keys or network. 23 tests:
 
-- policy decisions on all six fixture bills,
+- policy gate: golden decision table for all six fixture bills (decision, rule ids, research flag), plus edge cases: band edges and one cent outside, funding shortfall below the reserve floor, unknown funding account, every sensitive and every allow-listed category, determinism,
 - pricing math and receipt (only measured calls count; Ultra repricing),
 - JSON extraction from model output with `<think>` blocks and code fences,
 - offline run: zero network calls, every research step labeled OFFLINE, no cost reported, every brief has sources,
@@ -103,7 +104,7 @@ Models and endpoint can be overridden with `NEMOTRON_FAST_MODEL`, `NEMOTRON_REAS
 - live path with a fake Token Factory client and fake Tavily server: Nano plans, Super briefs, Ultra reviews the dental bill, citations point at Tavily URLs, receipt is measured, Tavily credits add up,
 - `/api/status` never contains key values.
 
-`npm run check` runs typecheck, lint and tests.
+`npm run check` runs typecheck, lint and tests. GitHub Actions ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) runs typecheck, lint, tests and `next build` on every push, with no API keys.
 
 ---
 
