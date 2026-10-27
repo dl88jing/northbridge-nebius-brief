@@ -1,0 +1,23 @@
+name: Live health
+# Checks the public demo every 6 hours so a broken deployment is noticed during judging.
+# Uses only the public /api/health endpoint (no keys, no paid API calls).
+on:
+  schedule:
+    - cron: "17 */6 * * *"
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  health:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Home page responds 200
+        run: |
+          code=$(curl -s -o /dev/null -w "%{http_code}" --retry 3 --retry-delay 10 https://northbridge-nebius-brief.vercel.app/)
+          echo "home: $code"; test "$code" = "200"
+      - name: /api/health reports live mode with both providers
+        run: |
+          body=$(curl -sf --retry 3 --retry-delay 10 https://northbridge-nebius-brief.vercel.app/api/health)
+          echo "$body"
+          echo "$body" | jq -e '.ok == true and .mode == "live" and .token_factory == true and .tavily == true'

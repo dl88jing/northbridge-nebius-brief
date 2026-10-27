@@ -7,11 +7,12 @@ The demo household (Avery & Morgan) and all bills are fictional.
 - **Live app:** https://northbridge-nebius-brief.vercel.app
 - **Pitch deck:** [docs/pitch-deck.pdf](docs/pitch-deck.pdf)
 - **Architecture:** [docs/architecture.md](docs/architecture.md)
+- **Live evaluation (5 runs on production):** [docs/live-eval.md](docs/live-eval.md)
 
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![CI](https://github.com/dl88jing/northbridge-nebius-brief/actions/workflows/ci.yml/badge.svg)](https://github.com/dl88jing/northbridge-nebius-brief/actions/workflows/ci.yml)
 
-> **Current deployment status (Oct 25, 2026):** the live URL runs **live** on Nebius Token Factory (Nemotron 3 Nano, Super, Ultra) and Tavily. Check it yourself at [`/api/health?probe=1`](https://northbridge-nebius-brief.vercel.app/api/health?probe=1). If a provider fails, times out or runs out of credits, that step uses a labeled fallback and the run still completes; the banner and trace say so.
+> **Current deployment status (checked Oct 27, 2026):** the live URL runs **live** on Nebius Token Factory (Nemotron 3 Nano, Super, Ultra) and Tavily. Check it yourself at [`/api/health?probe=1`](https://northbridge-nebius-brief.vercel.app/api/health?probe=1). If a provider fails, times out or runs out of credits, that step uses a labeled fallback and the run still completes; the banner and trace say so.
 
 ---
 
@@ -59,6 +60,8 @@ To run live, copy `.env.example` to `.env.local` and set `NEBIUS_API_KEY` and `T
 | Saving | **65.4% cheaper** | |
 
 A normal full pass (6 bills: 2 auto-handled with zero tokens, 4 escalated) costs about **$0.0045**, takes about 8–11 s with fresh web research, and uses 9 Tavily credits. The in-app repricing of the same tokens on Ultra shows 59–61% savings. No cost figures are shown in offline mode.
+
+**Repeated runs, Oct 27, 2026** ([`docs/live-eval.md`](docs/live-eval.md), reproduce with `node scripts/eval-live.mjs`): 5 back-to-back full runs on the production URL, all 5 fully live with no fallback, identical policy decisions every run, mean measured cost **$0.00446 per run** (same tokens repriced on Ultra: $0.01179, 62.2% saving), mean 7.2 s server time. All 20 briefs had real web sources, and all 76 inline `[n]` citations pointed at a listed source. These runs reused cached Tavily results (0 credits), so they show model latency and cost, not fresh-research latency; the first cold run that morning took 18.4 s and 7 Tavily credits.
 
 Models and endpoint can be overridden with `NEMOTRON_FAST_MODEL`, `NEMOTRON_REASON_MODEL`, `NEMOTRON_ULTRA_MODEL`, `NEBIUS_BASE_URL` (default `https://api.tokenfactory.us-central1.nebius.com/v1/`, falls back to `https://api.tokenfactory.nebius.com/v1/`).
 
@@ -110,7 +113,7 @@ Models and endpoint can be overridden with `NEMOTRON_FAST_MODEL`, `NEMOTRON_REAS
 
 ## Limitations
 
-- **Single-run numbers.** The cost figures above are from individual runs, not averages.
+- **Small samples.** The benchmark table is a single run; the repeated-run numbers are 5 runs on one fictional household. Citation checks are mechanical (each `[n]` resolves to a real URL), not a judgment of source quality; for example, a PG&E search can still surface a different utility's page, which is why a human reviews every brief.
 - **Fixture data.** Six fictional bills; no bank, email or biller integration. Nothing is ever paid.
 - **Rules are simple.** Expected-amount bands and duplicate detection are hand-set per bill.
 - **Prices are list prices** copied on 2026-10-25; Token Factory may change them. Unknown models show "n/a" instead of a guess.
@@ -137,6 +140,7 @@ lib/nemotron.ts     Plan, cited brief, Ultra review, offline templates
 data/               Fictional household fixtures + offline research
 tests/              node:test suites
 scripts/demo.ts     Terminal demo (./demo.sh)
+scripts/eval-live.mjs  Repeated-run evaluation against a deployment -> docs/live-eval.{md,json}
 docs/               Architecture (SVG/PNG/MD), pitch deck
 ```
 

@@ -1,0 +1,483 @@
+{
+  "summary": {
+    "base": "https://northbridge-nebius-brief.vercel.app",
+    "runs_requested": 5,
+    "runs_ok": 5,
+    "live_runs": 5,
+    "runs_with_fallback": 0,
+    "identical_decisions_across_runs": true,
+    "server_ms": {
+      "mean": 7172,
+      "p50": 6358,
+      "max": 10665
+    },
+    "routed_cost_usd_mean": 0.004459243999999999,
+    "all_ultra_repriced_usd_mean": 0.011790799999999999,
+    "savings_pct_mean": 62.2,
+    "tokens_mean": 8212,
+    "tavily_credits_mean": 0,
+    "briefs": 20,
+    "briefs_with_sources": 20,
+    "briefs_with_real_urls_only": 20,
+    "briefs_with_inline_citation": 20,
+    "citation_markers": 76,
+    "citation_markers_resolved": 76,
+    "step_latency_ms_by_model": {
+      "nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B": {
+        "n": 5,
+        "mean": 3322,
+        "p50": 2029,
+        "max": 6810
+      },
+      "nvidia/nemotron-3-super-120b-a12b": {
+        "n": 20,
+        "mean": 3012,
+        "p50": 3239,
+        "max": 4175
+      },
+      "nvidia/Nemotron-3-Ultra-550b-a55b": {
+        "n": 5,
+        "mean": 657,
+        "p50": 651,
+        "max": 688
+      }
+    }
+  },
+  "runs": [
+    {
+      "run": 1,
+      "http": 200,
+      "started_at": "2026-10-27T13:37:52.100Z",
+      "run_mode": "live",
+      "fallbacks": 0,
+      "server_ms": 10665,
+      "wall_ms": 10794,
+      "decisions": "bill-pge-2026-09:HUMAN_REQUIRED,bill-streamflix-2026-09:HUMAN_REQUIRED,bill-rent-2026-09:AUTO,bill-pge-dup-2026-09:HUMAN_REQUIRED,bill-dental-2026-09:HUMAN_REQUIRED,bill-fiber-2026-09:AUTO",
+      "auto": 2,
+      "escalated": 4,
+      "llm_calls": 6,
+      "prompt_tokens": 6419,
+      "completion_tokens": 1780,
+      "routed_cost_usd": 0.00442598,
+      "all_ultra_repriced_usd": 0.011759000000000002,
+      "savings_pct": 62.4,
+      "tavily_credits": 0,
+      "step_latency_ms": [
+        {
+          "model": "nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B",
+          "ms": 6810
+        },
+        {
+          "model": "nvidia/nemotron-3-super-120b-a12b",
+          "ms": 2804
+        },
+        {
+          "model": "nvidia/nemotron-3-super-120b-a12b",
+          "ms": 3666
+        },
+        {
+          "model": "nvidia/nemotron-3-super-120b-a12b",
+          "ms": 3568
+        },
+        {
+          "model": "nvidia/nemotron-3-super-120b-a12b",
+          "ms": 3239
+        },
+        {
+          "model": "nvidia/Nemotron-3-Ultra-550b-a55b",
+          "ms": 614
+        }
+      ],
+      "briefs": [
+        {
+          "bill_id": "bill-pge-2026-09",
+          "model": "nvidia/nemotron-3-super-120b-a12b",
+          "mode": "live",
+          "sources": 5,
+          "real_urls": 5,
+          "markers": 4,
+          "markers_resolved": 4,
+          "distinct_cited": 3
+        },
+        {
+          "bill_id": "bill-streamflix-2026-09",
+          "model": "nvidia/nemotron-3-super-120b-a12b",
+          "mode": "live",
+          "sources": 5,
+          "real_urls": 5,
+          "markers": 3,
+          "markers_resolved": 3,
+          "distinct_cited": 3
+        },
+        {
+          "bill_id": "bill-pge-dup-2026-09",
+          "model": "nvidia/nemotron-3-super-120b-a12b",
+          "mode": "live",
+          "sources": 5,
+          "real_urls": 5,
+          "markers": 3,
+          "markers_resolved": 3,
+          "distinct_cited": 3
+        },
+        {
+          "bill_id": "bill-dental-2026-09",
+          "model": "nvidia/nemotron-3-super-120b-a12b",
+          "mode": "live",
+          "sources": 5,
+          "real_urls": 5,
+          "markers": 5,
+          "markers_resolved": 5,
+          "distinct_cited": 5
+        }
+      ]
+    },
+    {
+      "run": 2,
+      "http": 200,
+      "started_at": "2026-10-27T13:38:02.848Z",
+      "run_mode": "live",
+      "fallbacks": 0,
+      "server_ms": 8118,
+      "wall_ms": 8189,
+      "decisions": "bill-pge-2026-09:HUMAN_REQUIRED,bill-streamflix-2026-09:HUMAN_REQUIRED,bill-rent-2026-09:AUTO,bill-pge-dup-2026-09:HUMAN_REQUIRED,bill-dental-2026-09:HUMAN_REQUIRED,bill-fiber-2026-09:AUTO",
+      "auto": 2,
+      "escalated": 4,
+      "llm_calls": 6,
+      "prompt_tokens": 6414,
+      "completion_tokens": 1920,
+      "routed_cost_usd": 0.00459852,
+      "all_ultra_repriced_usd": 0.012173999999999999,
+      "savings_pct": 62.2,
+      "tavily_credits": 0,
+      "step_latency_ms": [
+        {
+          "model": "nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B",
+          "ms": 3941
+        },
+        {
+          "model": "nvidia/nemotron-3-super-120b-a12b",
+          "ms": 2062
+        },
+        {
+          "model": "nvidia/nemotron-3-super-120b-a12b",
+          "ms": 4175
+        },
+        {
+          "model": "nvidia/nemotron-3-super-120b-a12b",
+          "ms": 3284
+        },
+        {
+          "model": "nvidia/nemotron-3-super-120b-a12b",
+          "ms": 1924
+        },
+        {
+          "model": "nvidia/Nemotron-3-Ultra-550b-a55b",
+          "ms": 648
+        }
+      ],
+      "briefs": [
+        {
+          "bill_id": "bill-pge-2026-09",
+          "model": "nvidia/nemotron-3-super-120b-a12b",
+          "mode": "live",
+          "sources": 5,
+          "real_urls": 5,
+          "markers": 2,
+          "markers_resolved": 2,
+          "distinct_cited": 2
+        },
+        {
+          "bill_id": "bill-streamflix-2026-09",
+          "model": "nvidia/nemotron-3-super-120b-a12b",
+          "mode": "live",
+          "sources": 5,
+          "real_urls": 5,
+          "markers": 9,
+          "markers_resolved": 9,
+          "distinct_cited": 3
+        },
+        {
+          "bill_id": "bill-pge-dup-2026-09",
+          "model": "nvidia/nemotron-3-super-120b-a12b",
+          "mode": "live",
+          "sources": 5,
+          "real_urls": 5,
+          "markers": 2,
+          "markers_resolved": 2,
+          "distinct_cited": 2
+        },
+        {
+          "bill_id": "bill-dental-2026-09",
+          "model": "nvidia/nemotron-3-super-120b-a12b",
+          "mode": "live",
+          "sources": 5,
+          "real_urls": 5,
+          "markers": 5,
+          "markers_resolved": 5,
+          "distinct_cited": 5
+        }
+      ]
+    },
+    {
+      "run": 3,
+      "http": 200,
+      "started_at": "2026-10-27T13:38:11.015Z",
+      "run_mode": "live",
+      "fallbacks": 0,
+      "server_ms": 5782,
+      "wall_ms": 5828,
+      "decisions": "bill-pge-2026-09:HUMAN_REQUIRED,bill-streamflix-2026-09:HUMAN_REQUIRED,bill-rent-2026-09:AUTO,bill-pge-dup-2026-09:HUMAN_REQUIRED,bill-dental-2026-09:HUMAN_REQUIRED,bill-fiber-2026-09:AUTO",
+      "auto": 2,
+      "escalated": 4,
+      "llm_calls": 6,
+      "prompt_tokens": 6433,
+      "completion_tokens": 1803,
+      "routed_cost_usd": 0.00446926,
+      "all_ultra_repriced_usd": 0.011842000000000002,
+      "savings_pct": 62.3,
+      "tavily_credits": 0,
+      "step_latency_ms": [
+        {
+          "model": "nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B",
+          "ms": 1868
+        },
+        {
+          "model": "nvidia/nemotron-3-super-120b-a12b",
+          "ms": 2759
+        },
+        {
+          "model": "nvidia/nemotron-3-super-120b-a12b",
+          "ms": 3519
+        },
+        {
+          "model": "nvidia/nemotron-3-super-120b-a12b",
+          "ms": 2880
+        },
+        {
+          "model": "nvidia/nemotron-3-super-120b-a12b",
+          "ms": 3260
+        },
+        {
+          "model": "nvidia/Nemotron-3-Ultra-550b-a55b",
+          "ms": 651
+        }
+      ],
+      "briefs": [
+        {
+          "bill_id": "bill-pge-2026-09",
+          "model": "nvidia/nemotron-3-super-120b-a12b",
+          "mode": "live",
+          "sources": 5,
+          "real_urls": 5,
+          "markers": 1,
+          "markers_resolved": 1,
+          "distinct_cited": 1
+        },
+        {
+          "bill_id": "bill-streamflix-2026-09",
+          "model": "nvidia/nemotron-3-super-120b-a12b",
+          "mode": "live",
+          "sources": 5,
+          "real_urls": 5,
+          "markers": 5,
+          "markers_resolved": 5,
+          "distinct_cited": 3
+        },
+        {
+          "bill_id": "bill-pge-dup-2026-09",
+          "model": "nvidia/nemotron-3-super-120b-a12b",
+          "mode": "live",
+          "sources": 5,
+          "real_urls": 5,
+          "markers": 2,
+          "markers_resolved": 2,
+          "distinct_cited": 1
+        },
+        {
+          "bill_id": "bill-dental-2026-09",
+          "model": "nvidia/nemotron-3-super-120b-a12b",
+          "mode": "live",
+          "sources": 5,
+          "real_urls": 5,
+          "markers": 5,
+          "markers_resolved": 5,
+          "distinct_cited": 5
+        }
+      ]
+    },
+    {
+      "run": 4,
+      "http": 200,
+      "started_at": "2026-10-27T13:38:16.851Z",
+      "run_mode": "live",
+      "fallbacks": 0,
+      "server_ms": 4938,
+      "wall_ms": 4991,
+      "decisions": "bill-pge-2026-09:HUMAN_REQUIRED,bill-streamflix-2026-09:HUMAN_REQUIRED,bill-rent-2026-09:AUTO,bill-pge-dup-2026-09:HUMAN_REQUIRED,bill-dental-2026-09:HUMAN_REQUIRED,bill-fiber-2026-09:AUTO",
+      "auto": 2,
+      "escalated": 4,
+      "llm_calls": 6,
+      "prompt_tokens": 6418,
+      "completion_tokens": 1689,
+      "routed_cost_usd": 0.00436636,
+      "all_ultra_repriced_usd": 0.011484999999999999,
+      "savings_pct": 62,
+      "tavily_credits": 0,
+      "step_latency_ms": [
+        {
+          "model": "nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B",
+          "ms": 1961
+        },
+        {
+          "model": "nvidia/nemotron-3-super-120b-a12b",
+          "ms": 2225
+        },
+        {
+          "model": "nvidia/nemotron-3-super-120b-a12b",
+          "ms": 2157
+        },
+        {
+          "model": "nvidia/nemotron-3-super-120b-a12b",
+          "ms": 2975
+        },
+        {
+          "model": "nvidia/nemotron-3-super-120b-a12b",
+          "ms": 2102
+        },
+        {
+          "model": "nvidia/Nemotron-3-Ultra-550b-a55b",
+          "ms": 688
+        }
+      ],
+      "briefs": [
+        {
+          "bill_id": "bill-pge-2026-09",
+          "model": "nvidia/nemotron-3-super-120b-a12b",
+          "mode": "live",
+          "sources": 5,
+          "real_urls": 5,
+          "markers": 2,
+          "markers_resolved": 2,
+          "distinct_cited": 2
+        },
+        {
+          "bill_id": "bill-streamflix-2026-09",
+          "model": "nvidia/nemotron-3-super-120b-a12b",
+          "mode": "live",
+          "sources": 5,
+          "real_urls": 5,
+          "markers": 3,
+          "markers_resolved": 3,
+          "distinct_cited": 3
+        },
+        {
+          "bill_id": "bill-pge-dup-2026-09",
+          "model": "nvidia/nemotron-3-super-120b-a12b",
+          "mode": "live",
+          "sources": 5,
+          "real_urls": 5,
+          "markers": 4,
+          "markers_resolved": 4,
+          "distinct_cited": 4
+        },
+        {
+          "bill_id": "bill-dental-2026-09",
+          "model": "nvidia/nemotron-3-super-120b-a12b",
+          "mode": "live",
+          "sources": 5,
+          "real_urls": 5,
+          "markers": 5,
+          "markers_resolved": 5,
+          "distinct_cited": 5
+        }
+      ]
+    },
+    {
+      "run": 5,
+      "http": 200,
+      "started_at": "2026-10-27T13:38:21.849Z",
+      "run_mode": "live",
+      "fallbacks": 0,
+      "server_ms": 6358,
+      "wall_ms": 6409,
+      "decisions": "bill-pge-2026-09:HUMAN_REQUIRED,bill-streamflix-2026-09:HUMAN_REQUIRED,bill-rent-2026-09:AUTO,bill-pge-dup-2026-09:HUMAN_REQUIRED,bill-dental-2026-09:HUMAN_REQUIRED,bill-fiber-2026-09:AUTO",
+      "auto": 2,
+      "escalated": 4,
+      "llm_calls": 6,
+      "prompt_tokens": 6432,
+      "completion_tokens": 1754,
+      "routed_cost_usd": 0.0044361,
+      "all_ultra_repriced_usd": 0.011694,
+      "savings_pct": 62.1,
+      "tavily_credits": 0,
+      "step_latency_ms": [
+        {
+          "model": "nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B",
+          "ms": 2029
+        },
+        {
+          "model": "nvidia/nemotron-3-super-120b-a12b",
+          "ms": 3362
+        },
+        {
+          "model": "nvidia/nemotron-3-super-120b-a12b",
+          "ms": 2937
+        },
+        {
+          "model": "nvidia/nemotron-3-super-120b-a12b",
+          "ms": 3698
+        },
+        {
+          "model": "nvidia/nemotron-3-super-120b-a12b",
+          "ms": 3645
+        },
+        {
+          "model": "nvidia/Nemotron-3-Ultra-550b-a55b",
+          "ms": 682
+        }
+      ],
+      "briefs": [
+        {
+          "bill_id": "bill-pge-2026-09",
+          "model": "nvidia/nemotron-3-super-120b-a12b",
+          "mode": "live",
+          "sources": 5,
+          "real_urls": 5,
+          "markers": 2,
+          "markers_resolved": 2,
+          "distinct_cited": 2
+        },
+        {
+          "bill_id": "bill-streamflix-2026-09",
+          "model": "nvidia/nemotron-3-super-120b-a12b",
+          "mode": "live",
+          "sources": 5,
+          "real_urls": 5,
+          "markers": 5,
+          "markers_resolved": 5,
+          "distinct_cited": 3
+        },
+        {
+          "bill_id": "bill-pge-dup-2026-09",
+          "model": "nvidia/nemotron-3-super-120b-a12b",
+          "mode": "live",
+          "sources": 5,
+          "real_urls": 5,
+          "markers": 4,
+          "markers_resolved": 4,
+          "distinct_cited": 4
+        },
+        {
+          "bill_id": "bill-dental-2026-09",
+          "model": "nvidia/nemotron-3-super-120b-a12b",
+          "mode": "live",
+          "sources": 5,
+          "real_urls": 5,
+          "markers": 5,
+          "markers_resolved": 5,
+          "distinct_cited": 5
+        }
+      ]
+    }
+  ]
+}
