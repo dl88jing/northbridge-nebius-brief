@@ -11,8 +11,9 @@ The demo household (Avery & Morgan) and all bills are fictional.
 
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![CI](https://github.com/dl88jing/northbridge-nebius-brief/actions/workflows/ci.yml/badge.svg)](https://github.com/dl88jing/northbridge-nebius-brief/actions/workflows/ci.yml)
+[![Live health](https://github.com/dl88jing/northbridge-nebius-brief/actions/workflows/live-health.yml/badge.svg)](https://github.com/dl88jing/northbridge-nebius-brief/actions/workflows/live-health.yml)
 
-> **Current deployment status (checked Oct 27, 2026):** the live URL runs **live** on Nebius Token Factory (Nemotron 3 Nano, Super, Ultra) and Tavily. Check it yourself at [`/api/health?probe=1`](https://northbridge-nebius-brief.vercel.app/api/health?probe=1). If a provider fails, times out or runs out of credits, that step uses a labeled fallback and the run still completes; the banner and trace say so.
+> **Current deployment status (checked Oct 29, 2026):** the live URL runs **live** on Nebius Token Factory (Nemotron 3 Nano, Super, Ultra) and Tavily. Check it yourself at [`/api/health?probe=1`](https://northbridge-nebius-brief.vercel.app/api/health?probe=1). A full production run that morning: 6 bills (2 auto, 4 escalated), no fallbacks, 12.5 s, $0.00448 measured, 8 fresh Tavily credits. A [Live health](.github/workflows/live-health.yml) check runs every 6 hours. If a provider fails, times out or runs out of credits, that step uses a labeled fallback and the run still completes; the banner and trace say so.
 
 ---
 
@@ -35,6 +36,20 @@ npm test           # unit + agent tests, no keys or network needed
 ```
 
 To run live, copy `.env.example` to `.env.local` and set `NEBIUS_API_KEY` and `TAVILY_API_KEY`.
+
+### For judges: verify the live calls from a terminal
+
+```bash
+# 1. Mode and keys (booleans only), plus one real Token Factory call and one real Tavily search
+curl -s "https://northbridge-nebius-brief.vercel.app/api/health?probe=1" | jq '{mode, probe}'
+
+# 2. One full agent run (~10-20 s): fallbacks should be [], tavily_credits > 0 on a cold cache
+curl -s -X POST https://northbridge-nebius-brief.vercel.app/api/investigate \
+  -H 'content-type: application/json' -d '{"reset":true}' \
+  | jq '{run_mode, fallbacks, summary, cost_usd: .receipt.routed_cost_usd, tavily_credits: .receipt.tavily_credits, per_model: [.receipt.per_model[] | {model, calls, cost_usd}]}'
+```
+
+Tavily results are cached per server instance for 6 hours, so a repeat run can report 0 credits; the sources in each brief are still the real URLs Tavily returned.
 
 ---
 
